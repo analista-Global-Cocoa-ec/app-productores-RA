@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_form_builder/flutter_form_builder.dart';
 
 import '../services/auth_service.dart';
-import 'form_screen.dart';
+import 'finca_home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -14,6 +14,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormBuilderState>();
   bool _isLoading = false;
+  bool _obscurePassword = true;
   String? _errorMessage;
 
   @override
@@ -46,7 +47,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (isValid) {
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const FormScreen()),
+        MaterialPageRoute(builder: (_) => const FincaHomeScreen()),
       );
     } else {
       setState(() {
@@ -103,11 +104,24 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 16),
                   FormBuilderTextField(
                     name: 'password',
-                    obscureText: true,
-                    decoration: const InputDecoration(
+                    obscureText: _obscurePassword,
+                    decoration: InputDecoration(
                       labelText: 'Contraseña',
-                      prefixIcon: Icon(Icons.lock_outline),
-                      border: OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                        ),
+                        tooltip: _obscurePassword ? 'Mostrar contraseña' : 'Ocultar contraseña',
+                        onPressed: () {
+                          setState(() {
+                            _obscurePassword = !_obscurePassword;
+                          });
+                        },
+                      ),
                     ),
                     validator: _requiredValidator,
                   ),

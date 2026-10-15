@@ -1,8 +1,8 @@
-/// Constante que simula la plantilla JSON recibida desde un servidor.
-/// Contiene la definición del formulario "Ficha del Agricultor".
-const Map<String, dynamic> agricultorTemplate = {
+/// Plantilla del formulario "Ficha del agricultor".
+/// Simula la respuesta JSON que vendría de un servidor.
+const Map<String, dynamic> fichaAgricultorTemplate = {
   'id': 'ficha_agricultor',
-  'titulo': 'Ficha del Agricultor',
+  'titulo': 'Ficha del agricultor',
   'descripcion': 'Registro de datos personales del productor de cacao',
   'campos': [
     {

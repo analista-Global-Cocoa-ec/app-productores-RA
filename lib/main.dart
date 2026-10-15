@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import 'screens/login_screen.dart';
 import 'services/auth_service.dart';
 import 'services/database_service.dart';
+import 'services/finca_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Inicializar base de datos Isar
+  // Inicializar base de datos Hive
   await DatabaseService.instance.initialize();
+  await FincaService.instance.initialize();
 
   // Inicializar usuario por defecto en almacenamiento seguro
   await AuthService.instance.initDefaultUser();

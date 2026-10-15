@@ -6,7 +6,10 @@ import '../services/database_service.dart';
 import '../services/template_service.dart';
 
 class FormScreen extends StatefulWidget {
-  const FormScreen({super.key});
+  final String? fincaCodigo;
+  final String? templateId;
+
+  const FormScreen({super.key, this.fincaCodigo, this.templateId});
 
   @override
   State<FormScreen> createState() => _FormScreenState();
@@ -15,6 +18,7 @@ class FormScreen extends StatefulWidget {
 class _FormScreenState extends State<FormScreen> {
   final _formKey = GlobalKey<FormBuilderState>();
   Map<String, dynamic>? _template;
+  Map<String, dynamic>? _respuestasGuardadas;
   bool _isLoading = true;
   bool _isSaving = false;
 
@@ -26,10 +30,21 @@ class _FormScreenState extends State<FormScreen> {
 
   Future<void> _loadTemplate() async {
     try {
-      final template = await TemplateService.instance.loadTemplate('ficha_agricultor');
+      final templateId = widget.templateId ?? 'ficha_agricultor';
+      final template = await TemplateService.instance.loadTemplate(templateId);
+
+      Map<String, dynamic>? guardadas;
+      if (widget.fincaCodigo != null) {
+        guardadas = await DatabaseService.instance.getFormResponseForFinca(
+          fincaCodigo: widget.fincaCodigo!,
+          templateId: templateId,
+        );
+      }
+
       if (mounted) {
         setState(() {
           _template = template;
+          _respuestasGuardadas = guardadas;
           _isLoading = false;
         });
       }
@@ -82,18 +97,22 @@ class _FormScreenState extends State<FormScreen> {
     });
 
     final templateId = _template!['id'] as String;
-    final newId = await DatabaseService.instance.saveFormResponse(
+    await DatabaseService.instance.saveFormResponse(
       templateId: templateId,
       respuestas: responses,
+      fincaCodigo: widget.fincaCodigo,
     );
 
     if (!mounted) return;
 
     setState(() => _isSaving = false);
+    setState(() {
+      _respuestasGuardadas = responses;
+    });
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Ficha guardada localmente con ID #$newId'),
+        content: const Text('Formulario guardado localmente'),
         backgroundColor: Colors.green,
         behavior: SnackBarBehavior.floating,
         action: SnackBarAction(
@@ -103,8 +122,6 @@ class _FormScreenState extends State<FormScreen> {
         ),
       ),
     );
-
-    _formKey.currentState?.reset();
   }
 
   Widget _buildField(Map<String, dynamic> field) {
@@ -113,6 +130,9 @@ class _FormScreenState extends State<FormScreen> {
     final type = field['type'] as String;
     final isRequired = field['required'] as bool? ?? false;
     final hint = field['hint'] as String?;
+
+    // Usar valor guardado si existe
+    final valorInicial = _respuestasGuardadas?[key];
 
     final String? Function(dynamic)? validator = isRequired
         ? (type == 'number' ? _numberValidator : _requiredValidator)
@@ -126,6 +146,7 @@ class _FormScreenState extends State<FormScreen> {
       case 'text':
         return FormBuilderTextField(
           name: key,
+          initialValue: valorInicial?.toString() ?? '',
           maxLength: field['maxLength'] as int?,
           decoration: InputDecoration(
             labelText: isRequired ? '$label *' : label,
@@ -138,6 +159,7 @@ class _FormScreenState extends State<FormScreen> {
       case 'number':
         return FormBuilderTextField(
           name: key,
+          initialValue: valorInicial?.toString() ?? '',
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: InputDecoration(
             labelText: isRequired ? '$label *' : label,
@@ -150,6 +172,9 @@ class _FormScreenState extends State<FormScreen> {
       case 'date':
         return FormBuilderDateTimePicker(
           name: key,
+          initialValue: valorInicial != null
+              ? DateTime.tryParse(valorInicial.toString())
+              : null,
           inputType: InputType.date,
           format: DateFormat('dd/MM/yyyy'),
           decoration: InputDecoration(
@@ -164,6 +189,7 @@ class _FormScreenState extends State<FormScreen> {
         final options = (field['options'] as List).cast<String>();
         return FormBuilderDropdown<String>(
           name: key,
+          initialValue: valorInicial?.toString(),
           decoration: InputDecoration(
             labelText: isRequired ? '$label *' : label,
             border: const OutlineInputBorder(),
@@ -178,7 +204,7 @@ class _FormScreenState extends State<FormScreen> {
         return FormBuilderSwitch(
           name: key,
           title: Text(label),
-          initialValue: false,
+          initialValue: valorInicial == true || valorInicial == 'true',
           contentPadding: EdgeInsets.zero,
           decoration: const InputDecoration(
             border: InputBorder.none,
@@ -188,6 +214,7 @@ class _FormScreenState extends State<FormScreen> {
       default:
         return FormBuilderTextField(
           name: key,
+          initialValue: valorInicial?.toString() ?? '',
           decoration: InputDecoration(
             labelText: isRequired ? '$label *' : label,
             border: const OutlineInputBorder(),
@@ -212,10 +239,13 @@ class _FormScreenState extends State<FormScreen> {
     }
 
     final campos = (_template!['campos'] as List).cast<Map<String, dynamic>>();
+    final titulo = widget.fincaCodigo != null
+        ? '${_template!['titulo']} - ${widget.fincaCodigo}'
+        : _template!['titulo'] as String;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_template!['titulo'] as String),
+        title: Text(titulo),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
