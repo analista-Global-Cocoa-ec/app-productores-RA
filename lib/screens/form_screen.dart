@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_form_builder/flutter_form_builder.dart';
 import 'package:intl/intl.dart';
 
+import '../models/finca.dart';
 import '../services/database_service.dart';
+import '../services/finca_service.dart';
 import '../services/template_service.dart';
+import '../widgets/firma_pad.dart';
 
 class FormScreen extends StatefulWidget {
   final String? fincaCodigo;
@@ -19,6 +22,8 @@ class _FormScreenState extends State<FormScreen> {
   final _formKey = GlobalKey<FormBuilderState>();
   Map<String, dynamic>? _template;
   Map<String, dynamic>? _respuestasGuardadas;
+  Finca? _finca;
+  int _resetVersion = 0;
   bool _isLoading = true;
   bool _isSaving = false;
 
@@ -41,10 +46,15 @@ class _FormScreenState extends State<FormScreen> {
         );
       }
 
+      final finca = widget.fincaCodigo != null
+          ? FincaService.instance.getFincaPorCodigo(widget.fincaCodigo!)
+          : null;
+
       if (mounted) {
         setState(() {
           _template = template;
           _respuestasGuardadas = guardadas;
+          _finca = finca;
           _isLoading = false;
         });
       }
@@ -58,21 +68,35 @@ class _FormScreenState extends State<FormScreen> {
     }
   }
 
-  String? _requiredValidator(dynamic value) {
-    if (value == null || (value is String && value.trim().isEmpty)) {
-      return 'Campo obligatorio';
+  /// Resuelve el valor de los campos de tipo `fixed` a partir de la finca.
+  String _valorFijo(Map<String, dynamic> field) {
+    switch (field['source']) {
+      case 'finca_codigo':
+        return _finca?.codigo ?? widget.fincaCodigo ?? '';
+      case 'finca_nombre_agricultor':
+        return _finca?.nombreAgricultor?.trim() ?? '';
+      default:
+        return '';
     }
-    return null;
   }
 
-  String? _numberValidator(dynamic value) {
-    if (value == null || (value is String && value.trim().isEmpty)) {
-      return 'Campo obligatorio';
-    }
-    if (double.tryParse(value.toString()) == null) {
-      return 'Ingrese un número válido';
-    }
-    return null;
+  String? Function(dynamic)? _validatorFor(Map<String, dynamic> field) {
+    final type = field['type'] as String;
+    final isRequired = field['required'] as bool? ?? false;
+    final positive = field['positive'] == true;
+
+    return (dynamic value) {
+      final texto = value?.toString().trim() ?? '';
+      if (texto.isEmpty) {
+        return isRequired ? 'Campo obligatorio' : null;
+      }
+      if (type == 'number') {
+        final numero = double.tryParse(texto.replaceAll(',', '.'));
+        if (numero == null) return 'Ingrese un número válido';
+        if (positive && numero <= 0) return 'Ingrese un número mayor a 0';
+      }
+      return null;
+    };
   }
 
   Future<void> _onSave() async {
@@ -89,6 +113,14 @@ class _FormScreenState extends State<FormScreen> {
     setState(() => _isSaving = true);
 
     final responses = Map<String, dynamic>.from(_formKey.currentState!.value);
+
+    // Los campos fijos no se editan, pero se guardan con su valor actual.
+    final campos = (_template!['campos'] as List).cast<Map<String, dynamic>>();
+    for (final campo in campos) {
+      if (campo['type'] == 'fixed') {
+        responses[campo['key'] as String] = _valorFijo(campo);
+      }
+    }
 
     responses.forEach((key, value) {
       if (value is DateTime) {
@@ -124,6 +156,21 @@ class _FormScreenState extends State<FormScreen> {
     );
   }
 
+  InputDecoration _decoration(
+    Map<String, dynamic> field, {
+    String? hint,
+    String? suffixText,
+  }) {
+    final label = field['label'] as String;
+    final isRequired = field['required'] as bool? ?? false;
+    return InputDecoration(
+      labelText: isRequired ? '$label *' : label,
+      hintText: hint,
+      suffixText: suffixText,
+      border: const OutlineInputBorder(),
+    );
+  }
+
   Widget _buildField(Map<String, dynamic> field) {
     final key = field['key'] as String;
     final label = field['label'] as String;
@@ -133,26 +180,31 @@ class _FormScreenState extends State<FormScreen> {
 
     // Usar valor guardado si existe
     final valorInicial = _respuestasGuardadas?[key];
-
-    final String? Function(dynamic)? validator = isRequired
-        ? (type == 'number' ? _numberValidator : _requiredValidator)
-        : (type == 'number'
-            ? (value) => (value != null && value.toString().isNotEmpty && double.tryParse(value.toString()) == null)
-                ? 'Ingrese un número válido'
-                : null
-            : null);
+    final validator = _validatorFor(field);
 
     switch (type) {
+      case 'fixed':
+        final valorFijo = _valorFijo(field);
+        return FormBuilderTextField(
+          name: key,
+          initialValue: valorFijo,
+          readOnly: true,
+          enabled: false,
+          decoration: InputDecoration(
+            labelText: label,
+            border: const OutlineInputBorder(),
+            filled: true,
+            suffixIcon: const Icon(Icons.lock_outline, size: 18),
+            hintText: valorFijo.isEmpty ? 'Sin dato registrado' : null,
+          ),
+        );
+
       case 'text':
         return FormBuilderTextField(
           name: key,
           initialValue: valorInicial?.toString() ?? '',
           maxLength: field['maxLength'] as int?,
-          decoration: InputDecoration(
-            labelText: isRequired ? '$label *' : label,
-            hintText: hint,
-            border: const OutlineInputBorder(),
-          ),
+          decoration: _decoration(field, hint: hint),
           validator: validator,
         );
 
@@ -161,12 +213,111 @@ class _FormScreenState extends State<FormScreen> {
           name: key,
           initialValue: valorInicial?.toString() ?? '',
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: InputDecoration(
-            labelText: isRequired ? '$label *' : label,
-            hintText: hint,
-            border: const OutlineInputBorder(),
+          decoration: _decoration(
+            field,
+            hint: hint,
+            suffixText: field['suffix'] as String?,
           ),
           validator: validator,
+        );
+
+      case 'number_unit':
+        final units = (field['units'] as List).cast<String>();
+        final unitKey = field['unitKey'] as String? ?? '${key}_unidad';
+        final unidadGuardada = _respuestasGuardadas?[unitKey]?.toString();
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 3,
+              child: FormBuilderTextField(
+                name: key,
+                initialValue: valorInicial?.toString() ?? '',
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: _decoration(field, hint: hint),
+                validator: validator,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 2,
+              child: FormBuilderDropdown<String>(
+                name: unitKey,
+                initialValue: units.contains(unidadGuardada)
+                    ? unidadGuardada
+                    : units.first,
+                decoration: InputDecoration(
+                  labelText: field['unitLabel'] as String? ?? 'Unidad',
+                  border: const OutlineInputBorder(),
+                ),
+                items: units
+                    .map((u) => DropdownMenuItem(value: u, child: Text(u)))
+                    .toList(),
+                validator: (value) => value == null || value.isEmpty
+                    ? 'Seleccione una unidad'
+                    : null,
+              ),
+            ),
+          ],
+        );
+
+      case 'month_year':
+        final meses = (field['meses'] as List).cast<String>();
+        final anios = (field['anios'] as List).cast<String>();
+        final anioKey = field['anioKey'] as String? ?? '${key}_anio';
+        final mesGuardado = _respuestasGuardadas?[key]?.toString();
+        final anioGuardado = _respuestasGuardadas?[anioKey]?.toString();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isRequired ? '$label *' : label,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: FormBuilderDropdown<String>(
+                    name: key,
+                    initialValue: meses.contains(mesGuardado)
+                        ? mesGuardado
+                        : null,
+                    decoration: const InputDecoration(
+                      labelText: 'Mes',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: meses
+                        .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                        .toList(),
+                    validator: validator,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FormBuilderDropdown<String>(
+                    name: anioKey,
+                    initialValue: anios.contains(anioGuardado)
+                        ? anioGuardado
+                        : null,
+                    decoration: const InputDecoration(
+                      labelText: 'Año',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: anios
+                        .map((a) => DropdownMenuItem(value: a, child: Text(a)))
+                        .toList(),
+                    validator: validator,
+                  ),
+                ),
+              ],
+            ),
+          ],
         );
 
       case 'date':
@@ -198,6 +349,44 @@ class _FormScreenState extends State<FormScreen> {
               .map((opt) => DropdownMenuItem(value: opt, child: Text(opt)))
               .toList(),
           validator: validator,
+        );
+
+      case 'signature':
+        return FormBuilderField<String>(
+          name: key,
+          initialValue: valorInicial?.toString(),
+          validator: validator,
+          builder: (field) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isRequired ? '$label *' : label,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                FirmaPad(
+                  key: ValueKey('firma_${key}_$_resetVersion'),
+                  initialValue: _respuestasGuardadas?[key]?.toString(),
+                  onChanged: (valor) => field.didChange(valor),
+                ),
+                if (field.hasError)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 12, top: 4),
+                    child: Text(
+                      field.errorText ?? '',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
         );
 
       case 'switch':
@@ -288,7 +477,10 @@ class _FormScreenState extends State<FormScreen> {
               ),
               const SizedBox(height: 8),
               TextButton(
-                onPressed: () => _formKey.currentState?.reset(),
+                onPressed: () {
+                  _formKey.currentState?.reset();
+                  setState(() => _resetVersion++);
+                },
                 child: const Text('Limpiar formulario'),
               ),
             ],

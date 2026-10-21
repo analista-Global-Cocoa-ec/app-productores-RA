@@ -58,7 +58,7 @@ class FincaHomeScreen extends StatelessWidget {
                     );
                   },
                   icon: const Icon(Icons.edit_outlined),
-                  label: const Text('Editar Finca'),
+                  label: const Text('Actualizar Finca'),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),

@@ -81,12 +81,14 @@ class FincaService {
     required String codigo,
     required String canton,
     required String prefijo,
+    String? nombreAgricultor,
   }) async {
     final finca = Finca()
       ..codigo = codigo
       ..canton = canton
       ..prefijo = prefijo
-      ..estado = 'Activa';
+      ..estado = 'Activa'
+      ..nombreAgricultor = nombreAgricultor;
 
     await _box.add(finca);
     return finca;
@@ -101,6 +103,17 @@ class FincaService {
       return _box.values.firstWhere((f) => f.codigo == codigo);
     } catch (_) {
       return null;
+    }
+  }
+
+  Future<void> actualizarNombreAgricultor({
+    required String codigo,
+    required String nombreAgricultor,
+  }) async {
+    final finca = getFincaPorCodigo(codigo);
+    if (finca != null) {
+      finca.nombreAgricultor = nombreAgricultor.trim();
+      await finca.save();
     }
   }
 

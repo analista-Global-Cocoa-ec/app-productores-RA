@@ -15,4 +15,7 @@ class Finca extends HiveObject {
 
   @HiveField(3)
   String estado = 'Activa';
+
+  @HiveField(4)
+  String? nombreAgricultor;
 }

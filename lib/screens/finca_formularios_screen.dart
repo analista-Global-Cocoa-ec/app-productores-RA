@@ -63,11 +63,6 @@ class _FincaFormulariosScreenState extends State<FincaFormulariosScreen> {
   List<Map<String, dynamic>> _getFormulariosDisponibles() {
     return [
       {
-        'id': 'ficha_agricultor',
-        'nombre': 'Ficha del agricultor',
-        'icon': Icons.person_outline,
-      },
-      {
         'id': 'registro_cosecha',
         'nombre': 'Registro manual de cosecha',
         'icon': Icons.agriculture_outlined,
@@ -81,6 +76,11 @@ class _FincaFormulariosScreenState extends State<FincaFormulariosScreen> {
         'id': 'registro_fertilizantes',
         'nombre': 'Registro de fertilizantes',
         'icon': Icons.eco_outlined,
+      },
+      {
+        'id': 'ficha_agricultor',
+        'nombre': 'Ficha del agricultor',
+        'icon': Icons.person_outline,
       },
     ];
   }
@@ -97,16 +97,30 @@ class _FincaFormulariosScreenState extends State<FincaFormulariosScreen> {
     if (campos.isEmpty) return 'empty';
 
     int camposLlenos = 0;
+    int totalCampos = 0;
     for (final campo in campos) {
-      final key = campo['key'] as String;
-      final valor = respuestas[key];
-      if (valor != null && valor.toString().isNotEmpty) {
-        camposLlenos++;
+      // Un campo puede guardar su valor en varias claves (número + unidad,
+      // mes + año).
+      final claves = <String>[campo['key'] as String];
+      for (final extra in ['unitKey', 'anioKey']) {
+        final claveExtra = campo[extra];
+        if (claveExtra is String && claveExtra.isNotEmpty) {
+          claves.add(claveExtra);
+        }
+      }
+
+      for (final clave in claves) {
+        totalCampos++;
+        final valor = respuestas[clave];
+        if (valor != null && valor.toString().isNotEmpty) {
+          camposLlenos++;
+        }
       }
     }
 
+    if (totalCampos == 0) return 'empty';
     if (camposLlenos == 0) return 'empty';
-    if (camposLlenos == campos.length) return 'complete';
+    if (camposLlenos == totalCampos) return 'complete';
     return 'partial';
   }
 

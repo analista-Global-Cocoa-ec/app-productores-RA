@@ -20,13 +20,14 @@ class FincaAdapter extends TypeAdapter<Finca> {
       ..codigo = fields[0] as String
       ..canton = fields[1] as String
       ..prefijo = fields[2] as String
-      ..estado = fields[3] as String;
+      ..estado = fields[3] as String
+      ..nombreAgricultor = fields[4] as String?;
   }
 
   @override
   void write(BinaryWriter writer, Finca obj) {
     writer
-      ..writeByte(4)
+      ..writeByte(5)
       ..writeByte(0)
       ..write(obj.codigo)
       ..writeByte(1)
@@ -34,7 +35,9 @@ class FincaAdapter extends TypeAdapter<Finca> {
       ..writeByte(2)
       ..write(obj.prefijo)
       ..writeByte(3)
-      ..write(obj.estado);
+      ..write(obj.estado)
+      ..writeByte(4)
+      ..write(obj.nombreAgricultor);
   }
 
   @override

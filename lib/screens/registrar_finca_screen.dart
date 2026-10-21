@@ -11,10 +11,18 @@ class RegistrarFincaScreen extends StatefulWidget {
 }
 
 class _RegistrarFincaScreenState extends State<RegistrarFincaScreen> {
+  final TextEditingController _nombreAgricultorController =
+      TextEditingController();
   String? _cantonSeleccionado;
   String? _prefijoSeleccionado;
   int? _numeroSeleccionado;
   bool _isSaving = false;
+
+  @override
+  void dispose() {
+    _nombreAgricultorController.dispose();
+    super.dispose();
+  }
 
   String get _codigoFinca {
     if (_prefijoSeleccionado == null || _numeroSeleccionado == null) {
@@ -24,6 +32,16 @@ class _RegistrarFincaScreenState extends State<RegistrarFincaScreen> {
   }
 
   Future<void> _onRegistrar() async {
+    if (_nombreAgricultorController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ingrese el nombre del agricultor'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     if (_cantonSeleccionado == null ||
         _prefijoSeleccionado == null ||
         _numeroSeleccionado == null) {
@@ -42,6 +60,7 @@ class _RegistrarFincaScreenState extends State<RegistrarFincaScreen> {
       codigo: _codigoFinca,
       canton: _cantonSeleccionado!,
       prefijo: _prefijoSeleccionado!,
+      nombreAgricultor: _nombreAgricultorController.text.trim(),
     );
 
     if (!mounted) return;
@@ -78,6 +97,20 @@ class _RegistrarFincaScreenState extends State<RegistrarFincaScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Nombre del agricultor
+            TextField(
+              controller: _nombreAgricultorController,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                labelText: 'Nombre del agricultor',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.person_outline),
+                hintText: 'Ej: Juan Pérez García',
+              ),
+            ),
+            const SizedBox(height: 16),
+
             // Selector de Cantón
             DropdownButtonFormField<String>(
               key: const ValueKey('canton_dropdown'),
