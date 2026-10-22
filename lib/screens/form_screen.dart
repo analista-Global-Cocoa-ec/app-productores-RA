@@ -7,6 +7,7 @@ import '../services/database_service.dart';
 import '../services/finca_service.dart';
 import '../services/template_service.dart';
 import '../widgets/firma_pad.dart';
+import '../widgets/form_field_label.dart';
 
 class FormScreen extends StatefulWidget {
   final String? fincaCodigo;
@@ -61,9 +62,9 @@ class _FormScreenState extends State<FormScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error cargando plantilla: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error cargando plantilla: $e')));
       }
     }
   }
@@ -156,18 +157,54 @@ class _FormScreenState extends State<FormScreen> {
     );
   }
 
-  InputDecoration _decoration(
-    Map<String, dynamic> field, {
-    String? hint,
-    String? suffixText,
-  }) {
-    final label = field['label'] as String;
-    final isRequired = field['required'] as bool? ?? false;
+  Future<void> _confirmarLimpiar() async {
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Limpiar formulario'),
+        content: const Text(
+          'Se borrarán todos los datos ingresados en este formulario. '
+          'Los datos guardados previamente no se modifican.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Limpiar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmado != true || !mounted) return;
+
+    _formKey.currentState?.reset();
+    setState(() => _resetVersion++);
+  }
+
+  InputDecoration _decoration({String? hint, String? suffixText}) {
     return InputDecoration(
-      labelText: isRequired ? '$label *' : label,
       hintText: hint,
       suffixText: suffixText,
       border: const OutlineInputBorder(),
+    );
+  }
+
+  /// Coloca la etiqueta del campo encima del control para que las etiquetas
+  /// largas se lean completas (el `labelText` de Material las recorta).
+  Widget _withLabel(Map<String, dynamic> field, Widget child) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        FormFieldLabel(
+          label: field['label'] as String,
+          isRequired: field['required'] as bool? ?? false,
+        ),
+        child,
+      ],
     );
   }
 
@@ -185,81 +222,92 @@ class _FormScreenState extends State<FormScreen> {
     switch (type) {
       case 'fixed':
         final valorFijo = _valorFijo(field);
-        return FormBuilderTextField(
-          name: key,
-          initialValue: valorFijo,
-          readOnly: true,
-          enabled: false,
-          decoration: InputDecoration(
-            labelText: label,
-            border: const OutlineInputBorder(),
-            filled: true,
-            suffixIcon: const Icon(Icons.lock_outline, size: 18),
-            hintText: valorFijo.isEmpty ? 'Sin dato registrado' : null,
+        return _withLabel(
+          field,
+          FormBuilderTextField(
+            name: key,
+            initialValue: valorFijo,
+            readOnly: true,
+            enabled: false,
+            decoration: InputDecoration(
+              border: const OutlineInputBorder(),
+              filled: true,
+              suffixIcon: const Icon(Icons.lock_outline, size: 18),
+              hintText: valorFijo.isEmpty ? 'Sin dato registrado' : null,
+            ),
           ),
         );
 
       case 'text':
-        return FormBuilderTextField(
-          name: key,
-          initialValue: valorInicial?.toString() ?? '',
-          maxLength: field['maxLength'] as int?,
-          decoration: _decoration(field, hint: hint),
-          validator: validator,
+        return _withLabel(
+          field,
+          FormBuilderTextField(
+            name: key,
+            initialValue: valorInicial?.toString() ?? '',
+            maxLength: field['maxLength'] as int?,
+            decoration: _decoration(hint: hint),
+            validator: validator,
+          ),
         );
 
       case 'number':
-        return FormBuilderTextField(
-          name: key,
-          initialValue: valorInicial?.toString() ?? '',
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: _decoration(
-            field,
-            hint: hint,
-            suffixText: field['suffix'] as String?,
+        return _withLabel(
+          field,
+          FormBuilderTextField(
+            name: key,
+            initialValue: valorInicial?.toString() ?? '',
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: _decoration(
+              hint: hint,
+              suffixText: field['suffix'] as String?,
+            ),
+            validator: validator,
           ),
-          validator: validator,
         );
 
       case 'number_unit':
         final units = (field['units'] as List).cast<String>();
         final unitKey = field['unitKey'] as String? ?? '${key}_unidad';
         final unidadGuardada = _respuestasGuardadas?[unitKey]?.toString();
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              flex: 3,
-              child: FormBuilderTextField(
-                name: key,
-                initialValue: valorInicial?.toString() ?? '',
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration: _decoration(field, hint: hint),
-                validator: validator,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              flex: 2,
-              child: FormBuilderDropdown<String>(
-                name: unitKey,
-                initialValue: units.contains(unidadGuardada)
-                    ? unidadGuardada
-                    : units.first,
-                decoration: InputDecoration(
-                  labelText: field['unitLabel'] as String? ?? 'Unidad',
-                  border: const OutlineInputBorder(),
+        return _withLabel(
+          field,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 3,
+                child: FormBuilderTextField(
+                  name: key,
+                  initialValue: valorInicial?.toString() ?? '',
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: _decoration(hint: hint),
+                  validator: validator,
                 ),
-                items: units
-                    .map((u) => DropdownMenuItem(value: u, child: Text(u)))
-                    .toList(),
-                validator: (value) => value == null || value.isEmpty
-                    ? 'Seleccione una unidad'
-                    : null,
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: FormBuilderDropdown<String>(
+                  name: unitKey,
+                  initialValue: units.contains(unidadGuardada)
+                      ? unidadGuardada
+                      : units.first,
+                  decoration: InputDecoration(
+                    labelText: field['unitLabel'] as String? ?? 'Unidad',
+                    border: const OutlineInputBorder(),
+                  ),
+                  items: units
+                      .map((u) => DropdownMenuItem(value: u, child: Text(u)))
+                      .toList(),
+                  validator: (value) => value == null || value.isEmpty
+                      ? 'Seleccione una unidad'
+                      : null,
+                ),
+              ),
+            ],
+          ),
         );
 
       case 'month_year':
@@ -271,14 +319,7 @@ class _FormScreenState extends State<FormScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              isRequired ? '$label *' : label,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
+            FormFieldLabel(label: label, isRequired: isRequired),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -321,34 +362,36 @@ class _FormScreenState extends State<FormScreen> {
         );
 
       case 'date':
-        return FormBuilderDateTimePicker(
-          name: key,
-          initialValue: valorInicial != null
-              ? DateTime.tryParse(valorInicial.toString())
-              : null,
-          inputType: InputType.date,
-          format: DateFormat('dd/MM/yyyy'),
-          decoration: InputDecoration(
-            labelText: isRequired ? '$label *' : label,
-            suffixIcon: const Icon(Icons.calendar_today),
-            border: const OutlineInputBorder(),
+        return _withLabel(
+          field,
+          FormBuilderDateTimePicker(
+            name: key,
+            initialValue: valorInicial != null
+                ? DateTime.tryParse(valorInicial.toString())
+                : null,
+            inputType: InputType.date,
+            format: DateFormat('dd/MM/yyyy'),
+            decoration: const InputDecoration(
+              suffixIcon: Icon(Icons.calendar_today),
+              border: OutlineInputBorder(),
+            ),
+            validator: validator,
           ),
-          validator: validator,
         );
 
       case 'dropdown':
         final options = (field['options'] as List).cast<String>();
-        return FormBuilderDropdown<String>(
-          name: key,
-          initialValue: valorInicial?.toString(),
-          decoration: InputDecoration(
-            labelText: isRequired ? '$label *' : label,
-            border: const OutlineInputBorder(),
+        return _withLabel(
+          field,
+          FormBuilderDropdown<String>(
+            name: key,
+            initialValue: valorInicial?.toString(),
+            decoration: const InputDecoration(border: OutlineInputBorder()),
+            items: options
+                .map((opt) => DropdownMenuItem(value: opt, child: Text(opt)))
+                .toList(),
+            validator: validator,
           ),
-          items: options
-              .map((opt) => DropdownMenuItem(value: opt, child: Text(opt)))
-              .toList(),
-          validator: validator,
         );
 
       case 'signature':
@@ -360,14 +403,7 @@ class _FormScreenState extends State<FormScreen> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  isRequired ? '$label *' : label,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 8),
+                FormFieldLabel(label: label, isRequired: isRequired),
                 FirmaPad(
                   key: ValueKey('firma_${key}_$_resetVersion'),
                   initialValue: _respuestasGuardadas?[key]?.toString(),
@@ -395,20 +431,18 @@ class _FormScreenState extends State<FormScreen> {
           title: Text(label),
           initialValue: valorInicial == true || valorInicial == 'true',
           contentPadding: EdgeInsets.zero,
-          decoration: const InputDecoration(
-            border: InputBorder.none,
-          ),
+          decoration: const InputDecoration(border: InputBorder.none),
         );
 
       default:
-        return FormBuilderTextField(
-          name: key,
-          initialValue: valorInicial?.toString() ?? '',
-          decoration: InputDecoration(
-            labelText: isRequired ? '$label *' : label,
-            border: const OutlineInputBorder(),
+        return _withLabel(
+          field,
+          FormBuilderTextField(
+            name: key,
+            initialValue: valorInicial?.toString() ?? '',
+            decoration: const InputDecoration(border: OutlineInputBorder()),
+            validator: validator,
           ),
-          validator: validator,
         );
     }
   }
@@ -416,9 +450,7 @@ class _FormScreenState extends State<FormScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (_template == null) {
@@ -433,57 +465,58 @@ class _FormScreenState extends State<FormScreen> {
         : _template!['titulo'] as String;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(titulo),
-        centerTitle: true,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: FormBuilder(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (_template!['descripcion'] != null) ...[
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Text(
-                      _template!['descripcion'] as String,
-                      style: Theme.of(context).textTheme.bodyMedium,
+      appBar: AppBar(title: Text(titulo), centerTitle: true),
+      body: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: FormBuilder(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_template!['descripcion'] != null) ...[
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(
+                        _template!['descripcion'] as String,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 16),
-              ],
-              ...campos.map((field) => Padding(
+                  const SizedBox(height: 16),
+                ],
+                ...campos.map(
+                  (field) => Padding(
                     padding: const EdgeInsets.only(bottom: 16),
                     child: _buildField(field),
-                  )),
-              const SizedBox(height: 8),
-              FilledButton.icon(
-                onPressed: _isSaving ? null : _onSave,
-                icon: _isSaving
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.save_outlined),
-                label: Text(_isSaving ? 'Guardando...' : 'Guardar Localmente'),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () {
-                  _formKey.currentState?.reset();
-                  setState(() => _resetVersion++);
-                },
-                child: const Text('Limpiar formulario'),
-              ),
-            ],
+                const SizedBox(height: 8),
+                FilledButton.icon(
+                  onPressed: _isSaving ? null : _onSave,
+                  icon: _isSaving
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.save_outlined),
+                  label: Text(
+                    _isSaving ? 'Guardando...' : 'Guardar Localmente',
+                  ),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: _confirmarLimpiar,
+                  child: const Text('Limpiar formulario'),
+                ),
+              ],
+            ),
           ),
         ),
       ),

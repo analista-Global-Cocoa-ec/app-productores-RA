@@ -64,90 +64,89 @@ class _EditarFincaScreenState extends State<EditarFincaScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Actualizar Finca'),
-        centerTitle: true,
-      ),
-      body: _fincas.isEmpty
-          ? const Center(
-              child: Text('No hay fincas registradas'),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: _fincas.length,
-              itemBuilder: (context, index) {
-                final finca = _fincas[index];
-                final nombreAgricultor = finca.nombreAgricultor?.trim() ?? '';
-                final tieneNombre = nombreAgricultor.isNotEmpty;
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: finca.estado == 'Activa'
-                          ? Colors.green[100]
-                          : Colors.red[100],
-                      child: Icon(
-                        Icons.agriculture,
-                        color: finca.estado == 'Activa'
-                            ? Colors.green[700]
-                            : Colors.red[700],
+      appBar: AppBar(title: const Text('Actualizar Finca'), centerTitle: true),
+      body: SafeArea(
+        top: false,
+        child: _fincas.isEmpty
+            ? const Center(child: Text('No hay fincas registradas'))
+            : ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: _fincas.length,
+                itemBuilder: (context, index) {
+                  final finca = _fincas[index];
+                  final nombreAgricultor = finca.nombreAgricultor?.trim() ?? '';
+                  final tieneNombre = nombreAgricultor.isNotEmpty;
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: finca.estado == 'Activa'
+                            ? Colors.green[100]
+                            : Colors.red[100],
+                        child: Icon(
+                          Icons.agriculture,
+                          color: finca.estado == 'Activa'
+                              ? Colors.green[700]
+                              : Colors.red[700],
+                        ),
                       ),
-                    ),
-                    title: Text(
-                      finca.codigo,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          tieneNombre
-                              ? nombreAgricultor
-                              : 'Sin agricultor registrado',
-                          style: TextStyle(
-                            fontStyle: tieneNombre
-                                ? FontStyle.normal
-                                : FontStyle.italic,
+                      title: Text(
+                        finca.codigo,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            tieneNombre
+                                ? nombreAgricultor
+                                : 'Sin agricultor registrado',
+                            style: TextStyle(
+                              fontStyle: tieneNombre
+                                  ? FontStyle.normal
+                                  : FontStyle.italic,
+                            ),
                           ),
-                        ),
-                        Text(
-                          '${finca.canton} - ${finca.estado}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
+                          Text(
+                            '${finca.canton} - ${finca.estado}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
+                      isThreeLine: true,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit_outlined),
+                            tooltip: 'Editar nombre del agricultor',
+                            onPressed: () => _editarNombreAgricultor(finca),
+                          ),
+                          const Icon(Icons.chevron_right),
+                        ],
+                      ),
+                      onTap: () {
+                        Navigator.of(context)
+                            .push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    FincaFormulariosScreen(finca: finca),
+                              ),
+                            )
+                            .then((_) => _loadFincas());
+                      },
                     ),
-                    isThreeLine: true,
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit_outlined),
-                          tooltip: 'Editar nombre del agricultor',
-                          onPressed: () => _editarNombreAgricultor(finca),
-                        ),
-                        const Icon(Icons.chevron_right),
-                      ],
-                    ),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => FincaFormulariosScreen(finca: finca),
-                        ),
-                      ).then((_) => _loadFincas());
-                    },
-                  ),
-                );
-              },
-            ),
+                  );
+                },
+              ),
+      ),
     );
   }
 }
@@ -215,10 +214,7 @@ class _DialogoNombreAgricultorState extends State<_DialogoNombreAgricultor> {
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancelar'),
         ),
-        FilledButton(
-          onPressed: _guardar,
-          child: const Text('Guardar'),
-        ),
+        FilledButton(onPressed: _guardar, child: const Text('Guardar')),
       ],
     );
   }

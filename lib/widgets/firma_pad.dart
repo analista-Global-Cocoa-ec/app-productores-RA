@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 /// Área para dibujar una firma con el dedo o el mouse.
@@ -27,6 +28,10 @@ class _FirmaPadState extends State<FirmaPad> {
   final List<List<Offset>> _trazos = [];
   List<Offset>? _trazoActual;
   bool _hayTinta = false;
+
+  /// Puntero (dedo/mouse) que está dibujando actualmente. Sirve para ignorar
+  /// toques adicionales mientras se traza una firma.
+  int? _punteroActivo;
 
   @override
   void initState() {
@@ -93,6 +98,27 @@ class _FirmaPadState extends State<FirmaPad> {
     );
   }
 
+  void _iniciarTrazo(Offset local, Size size) {
+    setState(() {
+      _trazoActual = [_normalizar(local, size)];
+      _trazos.add(_trazoActual!);
+      _hayTinta = true;
+    });
+  }
+
+  void _agregarPunto(Offset local, Size size) {
+    if (_trazoActual == null) return;
+    setState(() {
+      _trazoActual!.add(_normalizar(local, size));
+    });
+  }
+
+  void _finalizarTrazo() {
+    if (_trazoActual == null) return;
+    _trazoActual = null;
+    _notificarCambio();
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -111,47 +137,65 @@ class _FirmaPadState extends State<FirmaPad> {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final size = Size(constraints.maxWidth, constraints.maxHeight);
-              return GestureDetector(
+              // RawGestureDetector + EagerGestureRecognizer: el pad reclama
+              // el gesto apenas se toca, evitando que el SingleChildScrollView
+              // que lo contiene robe los arrastres verticales y haga scroll.
+              // Los eventos de dibujo se reciben con Listener, que no
+              // participa de la arena de gestos.
+              return RawGestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onPanStart: (detalles) {
-                  setState(() {
-                    _trazoActual = [_normalizar(detalles.localPosition, size)];
-                    _trazos.add(_trazoActual!);
-                    _hayTinta = true;
-                  });
-                },
-                onPanUpdate: (detalles) {
-                  if (_trazoActual == null) return;
-                  setState(() {
-                    _trazoActual!.add(_normalizar(detalles.localPosition, size));
-                  });
-                  _notificarCambio();
-                },
-                onPanEnd: (_) {
-                  _trazoActual = null;
-                  _notificarCambio();
-                },
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: CustomPaint(
-                        painter: _FirmaPainter(
-                          trazos: _trazos,
-                          color: colorScheme.onSurface,
-                        ),
+                gestures: {
+                  EagerGestureRecognizer:
+                      GestureRecognizerFactoryWithHandlers<
+                        EagerGestureRecognizer
+                      >(
+                        EagerGestureRecognizer.new,
+                        (EagerGestureRecognizer instance) {},
                       ),
-                    ),
-                    if (!_hayTinta)
-                      Center(
-                        child: Text(
-                          'Firme aquí',
-                          style: TextStyle(
-                            color: colorScheme.onSurfaceVariant,
-                            fontStyle: FontStyle.italic,
+                },
+                child: Listener(
+                  behavior: HitTestBehavior.opaque,
+                  onPointerDown: (event) {
+                    if (_punteroActivo != null) return;
+                    _punteroActivo = event.pointer;
+                    _iniciarTrazo(event.localPosition, size);
+                  },
+                  onPointerMove: (event) {
+                    if (event.pointer != _punteroActivo) return;
+                    _agregarPunto(event.localPosition, size);
+                  },
+                  onPointerUp: (event) {
+                    if (event.pointer != _punteroActivo) return;
+                    _punteroActivo = null;
+                    _finalizarTrazo();
+                  },
+                  onPointerCancel: (event) {
+                    if (event.pointer != _punteroActivo) return;
+                    _punteroActivo = null;
+                    _finalizarTrazo();
+                  },
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: CustomPaint(
+                          painter: _FirmaPainter(
+                            trazos: _trazos,
+                            color: colorScheme.onSurface,
                           ),
                         ),
                       ),
-                  ],
+                      if (!_hayTinta)
+                        Center(
+                          child: Text(
+                            'Firme aquí',
+                            style: TextStyle(
+                              color: colorScheme.onSurfaceVariant,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               );
             },

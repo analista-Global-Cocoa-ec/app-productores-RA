@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'screens/login_screen.dart';
 import 'services/auth_service.dart';
@@ -26,6 +27,16 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'App Productores RA',
       debugShowCheckedModeBanner: false,
+      locale: const Locale('es'),
+      supportedLocales: const [
+        Locale('es'),
+        Locale('en'),
+      ],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       theme: ThemeData(
         colorSchemeSeed: Colors.green,
         useMaterial3: true,

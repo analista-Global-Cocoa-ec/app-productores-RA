@@ -88,150 +88,156 @@ class _RegistrarFincaScreenState extends State<RegistrarFincaScreen> {
         : <int>[];
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Registrar Finca'),
-        centerTitle: true,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Nombre del agricultor
-            TextField(
-              controller: _nombreAgricultorController,
-              textCapitalization: TextCapitalization.words,
-              textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(
-                labelText: 'Nombre del agricultor',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.person_outline),
-                hintText: 'Ej: Juan Pérez García',
+      appBar: AppBar(title: const Text('Registrar Finca'), centerTitle: true),
+      body: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Nombre del agricultor
+              TextField(
+                controller: _nombreAgricultorController,
+                textCapitalization: TextCapitalization.words,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre del agricultor',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.person_outline),
+                  hintText: 'Ej: Juan Pérez García',
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-            // Selector de Cantón
-            DropdownButtonFormField<String>(
-              key: const ValueKey('canton_dropdown'),
-              initialValue: _cantonSeleccionado,
-              decoration: const InputDecoration(
-                labelText: 'Cantón',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.location_city),
-              ),
-              items: cantones
-                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                  .toList(),
-              onChanged: (value) {
-                setState(() {
-                  _cantonSeleccionado = value;
-                  _prefijoSeleccionado = null;
-                  _numeroSeleccionado = null;
-                });
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // Selector de Prefijo
-            DropdownButtonFormField<String>(
-              key: ValueKey('prefijo_dropdown_${_cantonSeleccionado ?? "none"}'),
-              initialValue: _prefijoSeleccionado,
-              decoration: const InputDecoration(
-                labelText: 'Prefijo',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.tag),
-              ),
-              items: prefijos
-                  .map((p) => DropdownMenuItem(value: p, child: Text(p)))
-                  .toList(),
-              onChanged: _cantonSeleccionado == null
-                  ? null
-                  : (value) {
-                      setState(() {
-                        _prefijoSeleccionado = value;
-                        _numeroSeleccionado = null;
-                      });
-                    },
-            ),
-            const SizedBox(height: 16),
-
-            // Selector de Número — PopupMenuButton para evitar bug de DropdownButtonFormField
-            if (_prefijoSeleccionado != null)
-              NumeroSelector(
-                key: ValueKey('numero_selector_${_prefijoSeleccionado}_${numeros.join(",")}'),
-                numeros: numeros,
-                valorSeleccionado: _numeroSeleccionado,
+              // Selector de Cantón
+              DropdownButtonFormField<String>(
+                key: const ValueKey('canton_dropdown'),
+                initialValue: _cantonSeleccionado,
+                decoration: const InputDecoration(
+                  labelText: 'Cantón',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.location_city),
+                ),
+                items: cantones
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                    .toList(),
                 onChanged: (value) {
                   setState(() {
-                    _numeroSeleccionado = value;
+                    _cantonSeleccionado = value;
+                    _prefijoSeleccionado = null;
+                    _numeroSeleccionado = null;
                   });
                 },
-              )
-            else
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.numbers, color: Colors.grey),
-                    const SizedBox(width: 12),
-                    Text(
-                      'Seleccione un prefijo primero',
-                      style: TextStyle(color: Colors.grey[600]),
-                    ),
-                  ],
-                ),
               ),
-            const SizedBox(height: 24),
+              const SizedBox(height: 16),
 
-            // Código asignado
-            Card(
-              color: Theme.of(context).colorScheme.primaryContainer,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    Text(
-                      'Código de Finca asignado:',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _codigoFinca,
-                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                    ),
-                  ],
+              // Selector de Prefijo
+              DropdownButtonFormField<String>(
+                key: ValueKey(
+                  'prefijo_dropdown_${_cantonSeleccionado ?? "none"}',
+                ),
+                initialValue: _prefijoSeleccionado,
+                decoration: const InputDecoration(
+                  labelText: 'Prefijo',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.tag),
+                ),
+                items: prefijos
+                    .map((p) => DropdownMenuItem(value: p, child: Text(p)))
+                    .toList(),
+                onChanged: _cantonSeleccionado == null
+                    ? null
+                    : (value) {
+                        setState(() {
+                          _prefijoSeleccionado = value;
+                          _numeroSeleccionado = null;
+                        });
+                      },
+              ),
+              const SizedBox(height: 16),
+
+              // Selector de Número — PopupMenuButton para evitar bug de DropdownButtonFormField
+              if (_prefijoSeleccionado != null)
+                NumeroSelector(
+                  key: ValueKey(
+                    'numero_selector_${_prefijoSeleccionado}_${numeros.join(",")}',
+                  ),
+                  numeros: numeros,
+                  valorSeleccionado: _numeroSeleccionado,
+                  onChanged: (value) {
+                    setState(() {
+                      _numeroSeleccionado = value;
+                    });
+                  },
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 16,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.numbers, color: Colors.grey),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Seleccione un prefijo primero',
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 24),
+
+              // Código asignado
+              Card(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Text(
+                        'Código de Finca asignado:',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _codigoFinca,
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 24),
+              const SizedBox(height: 24),
 
-            FilledButton.icon(
-              onPressed: _isSaving ? null : _onRegistrar,
-              icon: _isSaving
-                  ? const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.save_outlined),
-              label: Text(_isSaving ? 'Registrando...' : 'Registrar Finca'),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
+              FilledButton.icon(
+                onPressed: _isSaving ? null : _onRegistrar,
+                icon: _isSaving
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.save_outlined),
+                label: Text(_isSaving ? 'Registrando...' : 'Registrar Finca'),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
-
-

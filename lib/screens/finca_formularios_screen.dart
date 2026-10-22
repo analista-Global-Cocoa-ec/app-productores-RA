@@ -93,7 +93,8 @@ class _FincaFormulariosScreenState extends State<FincaFormulariosScreen> {
 
     if (respuestas == null || template == null) return 'empty';
 
-    final campos = (template['campos'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final campos =
+        (template['campos'] as List?)?.cast<Map<String, dynamic>>() ?? [];
     if (campos.isEmpty) return 'empty';
 
     int camposLlenos = 0;
@@ -158,7 +159,10 @@ class _FincaFormulariosScreenState extends State<FincaFormulariosScreen> {
           title: Text('Finca ${widget.finca.codigo}'),
           centerTitle: true,
         ),
-        body: const Center(child: CircularProgressIndicator()),
+        body: const SafeArea(
+          top: false,
+          child: Center(child: CircularProgressIndicator()),
+        ),
       );
     }
 
@@ -169,56 +173,59 @@ class _FincaFormulariosScreenState extends State<FincaFormulariosScreen> {
         title: Text('Finca ${widget.finca.codigo}'),
         centerTitle: true,
       ),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: formularios.length,
-        itemBuilder: (context, index) {
-          final formulario = formularios[index];
-          final estado = _getEstadoFormulario(formulario['id'] as String);
-          final color = _getColorForEstado(estado);
+      body: SafeArea(
+        top: false,
+        child: ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: formularios.length,
+          itemBuilder: (context, index) {
+            final formulario = formularios[index];
+            final estado = _getEstadoFormulario(formulario['id'] as String);
+            final color = _getColorForEstado(estado);
 
-          return Card(
-            margin: const EdgeInsets.only(bottom: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: color.withValues(alpha: 0.5), width: 1.5),
-            ),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: color.withValues(alpha: 0.15),
-                child: Icon(
-                  _getIconForEstado(estado),
-                  color: color,
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: color.withValues(alpha: 0.5),
+                  width: 1.5,
                 ),
               ),
-              title: Text(
-                formulario['nombre'] as String,
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: Text(
-                estado == 'empty'
-                    ? 'Formulario vacío'
-                    : estado == 'partial'
-                        ? 'Formulario parcialmente completado'
-                        : 'Formulario completo',
-                style: TextStyle(color: color),
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => FormScreen(
-                      fincaCodigo: widget.finca.codigo,
-                      templateId: formulario['id'] as String,
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: color.withValues(alpha: 0.15),
+                  child: Icon(_getIconForEstado(estado), color: color),
+                ),
+                title: Text(
+                  formulario['nombre'] as String,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  estado == 'empty'
+                      ? 'Formulario vacío'
+                      : estado == 'partial'
+                      ? 'Formulario parcialmente completado'
+                      : 'Formulario completo',
+                  style: TextStyle(color: color),
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => FormScreen(
+                        fincaCodigo: widget.finca.codigo,
+                        templateId: formulario['id'] as String,
+                      ),
                     ),
-                  ),
-                );
-                // Recargar datos al volver
-                _loadData();
-              },
-            ),
-          );
-        },
+                  );
+                  // Recargar datos al volver
+                  _loadData();
+                },
+              ),
+            );
+          },
+        ),
       ),
     );
   }
