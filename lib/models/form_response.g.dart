@@ -19,19 +19,34 @@ class FormResponseAdapter extends TypeAdapter<FormResponse> {
     return FormResponse()
       ..templateId = fields[0] as String
       ..respuestas = (fields[1] as Map).cast<String, dynamic>()
-      ..timestamp = fields[2] as DateTime;
+      ..timestamp = fields[2] as DateTime
+      ..fincaCodigo = fields[3] as String?
+      ..templateBaseId = fields[4] as String?
+      ..sincronizado = fields[5] as bool?
+      ..hashRespuestas = fields[6] as String?
+      ..actualizadoEnNube = fields[7] as DateTime?;
   }
 
   @override
   void write(BinaryWriter writer, FormResponse obj) {
     writer
-      ..writeByte(3)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.templateId)
       ..writeByte(1)
       ..write(obj.respuestas)
       ..writeByte(2)
-      ..write(obj.timestamp);
+      ..write(obj.timestamp)
+      ..writeByte(3)
+      ..write(obj.fincaCodigo)
+      ..writeByte(4)
+      ..write(obj.templateBaseId)
+      ..writeByte(5)
+      ..write(obj.sincronizado)
+      ..writeByte(6)
+      ..write(obj.hashRespuestas)
+      ..writeByte(7)
+      ..write(obj.actualizadoEnNube);
   }
 
   @override

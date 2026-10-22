@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/finca.dart';
 import '../services/database_service.dart';
+import '../services/sync_service.dart';
 import '../services/template_service.dart';
 import 'form_screen.dart';
 
@@ -20,11 +23,26 @@ class _FincaFormulariosScreenState extends State<FincaFormulariosScreen> {
   Map<String, Map<String, dynamic>?> _respuestasPorFormulario = {};
   Map<String, Map<String, dynamic>?> _templates = {};
   bool _isLoading = true;
+  bool _isSyncing = false;
+  StreamSubscription<ResultadoSync>? _syncSubscription;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+
+    // Refrescar los estados de los formularios cuando una sincronización
+    // automática descargue cambios desde la nube.
+    _syncSubscription = SyncService.instance.resultados.listen((resultado) {
+      if (!mounted || resultado.enCurso) return;
+      _loadData();
+    });
+  }
+
+  @override
+  void dispose() {
+    _syncSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -58,6 +76,32 @@ class _FincaFormulariosScreenState extends State<FincaFormulariosScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  Future<void> _sincronizarAhora() async {
+    if (_isSyncing) return;
+    setState(() => _isSyncing = true);
+
+    final resultado = await SyncService.instance.sincronizarTodo();
+
+    if (!mounted) return;
+
+    // Recargar para mostrar cambios descargados desde la nube.
+    await _loadData();
+
+    if (!mounted) return;
+    setState(() => _isSyncing = false);
+
+    final color = !resultado.disponible || resultado.errores > 0
+        ? Colors.orange
+        : Colors.green;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(resultado.resumen),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   List<Map<String, dynamic>> _getFormulariosDisponibles() {
@@ -172,6 +216,25 @@ class _FincaFormulariosScreenState extends State<FincaFormulariosScreen> {
       appBar: AppBar(
         title: Text('Finca ${widget.finca.codigo}'),
         centerTitle: true,
+        actions: [
+          if (_isSyncing)
+            const Padding(
+              padding: EdgeInsets.only(right: 16),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.cloud_sync_outlined),
+              tooltip: 'Sincronizar con la nube',
+              onPressed: _sincronizarAhora,
+            ),
+        ],
       ),
       body: SafeArea(
         top: false,

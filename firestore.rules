@@ -1,0 +1,17 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Durante el desarrollo se permite acceso abierto únicamente a la
+    // colección de formularios. Antes de publicar la app, reemplazar por
+    // reglas basadas en autenticación (ver README: Firebase Anonymous Auth).
+    match /formularios-fincas/{docId} {
+      allow read, write: if true;
+    }
+
+    // Cualquier otra colección queda bloqueada.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

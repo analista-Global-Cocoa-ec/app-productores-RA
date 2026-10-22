@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "408868876769",
+    "project_id": "app-productores-ra",
+    "storage_bucket": "app-productores-ra.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:408868876769:android:ba35e1f67f6705e75ba2a0",
+        "android_client_info": {
+          "package_name": "com.example.app_productores_ra"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDItaceJpUqKD8vdH6BOISvHwbzuQtoUGo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/finca.dart';
 import '../services/finca_service.dart';
+import '../services/sync_service.dart';
 import 'finca_formularios_screen.dart';
 
 class EditarFincaScreen extends StatefulWidget {
@@ -14,11 +17,25 @@ class EditarFincaScreen extends StatefulWidget {
 class _EditarFincaScreenState extends State<EditarFincaScreen> {
   List<Finca> _fincas = [];
   bool _isLoading = true;
+  StreamSubscription<ResultadoSync>? _syncSubscription;
 
   @override
   void initState() {
     super.initState();
     _loadFincas();
+
+    // Si la sincronización automática (por ejemplo al recuperar internet)
+    // descarga fincas nuevas, refrescar la lista sin salir de esta pantalla.
+    _syncSubscription = SyncService.instance.resultados.listen((resultado) {
+      if (!mounted || resultado.enCurso) return;
+      _loadFincas();
+    });
+  }
+
+  @override
+  void dispose() {
+    _syncSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadFincas() async {

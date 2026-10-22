@@ -2,6 +2,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import '../models/finca.dart';
 import '../models/form_response.dart';
+import 'sync_utils.dart';
 
 class DatabaseService {
   DatabaseService._();
@@ -18,62 +19,132 @@ class DatabaseService {
     await Hive.openBox<Finca>(_fincaBoxName);
   }
 
+  Box<FormResponse> get _formBox => Hive.box<FormResponse>(_formBoxName);
+
+  FormResponse? _buscarRegistro(String templateIdCompuesto) {
+    for (final registro in _formBox.values) {
+      if (registro.templateId == templateIdCompuesto) return registro;
+    }
+    return null;
+  }
+
   Future<int> saveFormResponse({
     required String templateId,
     required Map<String, dynamic> respuestas,
     String? fincaCodigo,
   }) async {
-    final box = Hive.box<FormResponse>(_formBoxName);
-    final compositeKey = fincaCodigo != null ? '$templateId:${fincaCodigo.hashCode}' : templateId;
+    final box = _formBox;
+    final compositeKey = fincaCodigo != null
+        ? '$templateId:${fincaCodigo.hashCode}'
+        : templateId;
+    final ahora = DateTime.now();
+    final hash = SyncUtils.hashRespuestas(respuestas);
 
-    // Buscar si ya existe un registro para esta finca + template
-    FormResponse? existente;
-    try {
-      existente = box.values.firstWhere(
-        (r) => r.templateId == compositeKey,
-      );
-    } catch (_) {
-      existente = null;
-    }
+    final existente = _buscarRegistro(compositeKey);
 
     if (existente != null) {
       // Actualizar el registro existente
       existente.respuestas = respuestas;
-      existente.timestamp = DateTime.now();
+      existente.timestamp = ahora;
+      existente.fincaCodigo = fincaCodigo ?? existente.fincaCodigo;
+      existente.templateBaseId = templateId;
+      existente.hashRespuestas = hash;
+      existente.sincronizado = false;
       await existente.save();
       return box.values.toList().indexOf(existente);
-    } else {
-      // Crear nuevo registro
-      final response = FormResponse()
-        ..templateId = compositeKey
-        ..respuestas = respuestas
-        ..timestamp = DateTime.now();
-
-      return await box.add(response);
     }
+
+    // Crear nuevo registro
+    final response = FormResponse()
+      ..templateId = compositeKey
+      ..respuestas = respuestas
+      ..timestamp = ahora
+      ..fincaCodigo = fincaCodigo
+      ..templateBaseId = templateId
+      ..hashRespuestas = hash
+      ..sincronizado = false;
+
+    return await box.add(response);
   }
 
   Future<List<FormResponse>> getAllResponses() async {
-    final box = Hive.box<FormResponse>(_formBoxName);
-    return box.values.toList();
+    return _formBox.values.toList();
+  }
+
+  /// Devuelve el registro local (con su estado de sincronización) para una
+  /// finca y plantilla, o `null` si aún no existe.
+  FormResponse? getRegistroFormResponse({
+    required String fincaCodigo,
+    required String templateId,
+  }) {
+    return _buscarRegistro('$templateId:${fincaCodigo.hashCode}');
   }
 
   Future<Map<String, dynamic>?> getFormResponseForFinca({
     required String fincaCodigo,
     required String templateId,
   }) async {
-    final box = Hive.box<FormResponse>(_formBoxName);
-    final compositeKey = '$templateId:${fincaCodigo.hashCode}';
-
-    final matches = box.values.where(
-      (r) => r.templateId == compositeKey,
-    ).toList();
+    final matches = _formBox.values
+        .where((r) => r.templateId == '$templateId:${fincaCodigo.hashCode}')
+        .toList();
 
     if (matches.isEmpty) return null;
 
     // Ordenar por timestamp descendente para obtener el más reciente
     matches.sort((a, b) => b.timestamp.compareTo(a.timestamp));
     return matches.first.respuestas;
+  }
+
+  /// Marca un registro local como sincronizado con la nube.
+  Future<void> marcarSincronizado(
+    FormResponse registro, {
+    String? hash,
+    DateTime? actualizadoEnNube,
+  }) async {
+    registro.sincronizado = true;
+    if (hash != null) registro.hashRespuestas = hash;
+    if (actualizadoEnNube != null) {
+      registro.actualizadoEnNube = actualizadoEnNube;
+    }
+    await registro.save();
+  }
+
+  /// Inserta o actualiza en Hive una respuesta descargada de Firestore.
+  Future<FormResponse> guardarRespuestaDesdeNube({
+    required String fincaCodigo,
+    required String templateId,
+    required Map<String, dynamic> respuestas,
+    required DateTime timestamp,
+    required String hashRespuestas,
+    DateTime? actualizadoEnNube,
+  }) async {
+    final compositeKey = '$templateId:${fincaCodigo.hashCode}';
+    final existente = _buscarRegistro(compositeKey);
+
+    if (existente != null) {
+      existente.respuestas = respuestas;
+      existente.timestamp = timestamp;
+      existente.fincaCodigo = fincaCodigo;
+      existente.templateBaseId = templateId;
+      existente.hashRespuestas = hashRespuestas;
+      existente.sincronizado = true;
+      existente.actualizadoEnNube = actualizadoEnNube;
+      await existente.save();
+      return existente;
+    }
+
+    final response = FormResponse()
+      ..templateId = compositeKey
+      ..respuestas = respuestas
+      ..timestamp = timestamp
+      ..fincaCodigo = fincaCodigo
+      ..templateBaseId = templateId
+      ..hashRespuestas = hashRespuestas
+      ..sincronizado = true
+      ..actualizadoEnNube = actualizadoEnNube;
+
+    await _formBox.add(response);
+    return response;
   }
 
   Future<void> close() async {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_form_builder/flutter_form_builder.dart';
 import 'package:intl/intl.dart';
@@ -5,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../models/finca.dart';
 import '../services/database_service.dart';
 import '../services/finca_service.dart';
+import '../services/sync_service.dart';
 import '../services/template_service.dart';
 import '../widgets/firma_pad.dart';
 import '../widgets/form_field_label.dart';
@@ -130,6 +133,7 @@ class _FormScreenState extends State<FormScreen> {
     });
 
     final templateId = _template!['id'] as String;
+    final marcaLocal = DateTime.now();
     await DatabaseService.instance.saveFormResponse(
       templateId: templateId,
       respuestas: responses,
@@ -153,6 +157,48 @@ class _FormScreenState extends State<FormScreen> {
           textColor: Colors.white,
           onPressed: () {},
         ),
+      ),
+    );
+
+    if (widget.fincaCodigo != null) {
+      unawaited(_sincronizarEnNube(responses, marcaLocal));
+    }
+  }
+
+  /// Intenta subir el formulario recién guardado. No bloquea el guardado local.
+  Future<void> _sincronizarEnNube(
+    Map<String, dynamic> respuestas,
+    DateTime timestamp,
+  ) async {
+    final resultado = await SyncService.instance.sincronizarFormulario(
+      fincaCodigo: widget.fincaCodigo!,
+      templateId: _template!['id'] as String,
+      templateTitulo: _template!['titulo'] as String? ?? '',
+      respuestas: respuestas,
+      timestamp: timestamp,
+    );
+
+    if (!mounted) return;
+
+    final String mensaje;
+    final Color color;
+    if (!resultado.disponible) {
+      mensaje =
+          'Guardado localmente. La nube no está disponible en esta plataforma.';
+      color = Colors.orange;
+    } else if (resultado.errores > 0) {
+      mensaje = 'Guardado localmente. No se pudo subir ahora; se reintentará al recuperar la conexión.';
+      color = Colors.orange;
+    } else {
+      mensaje = 'Formulario sincronizado en la nube';
+      color = Colors.green;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mensaje),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
