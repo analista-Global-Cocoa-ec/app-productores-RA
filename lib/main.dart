@@ -52,8 +52,8 @@ Future<void> main() async {
   await DatabaseService.instance.initialize();
   await FincaService.instance.initialize();
 
-  // Inicializar usuario por defecto en almacenamiento seguro
-  await AuthService.instance.initDefaultUser();
+  // Inicializar usuarios por defecto en almacenamiento seguro
+  await AuthService.instance.initDefaultUsers();
 
   // Escuchar los resultados de las sincronizaciones automáticas (reconexión).
   SyncService.instance.resultados.listen(_mostrarResultadoSync);

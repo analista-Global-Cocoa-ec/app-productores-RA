@@ -20,7 +20,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    AuthService.instance.initDefaultUser();
+    AuthService.instance.initDefaultUsers();
   }
 
   String? _requiredValidator(dynamic value) {
@@ -41,14 +41,11 @@ class _LoginScreenState extends State<LoginScreen> {
     final username = _formKey.currentState!.value['username'] as String;
     final password = _formKey.currentState!.value['password'] as String;
 
-    final isValid = await AuthService.instance.validateCredentials(
-      username,
-      password,
-    );
+    final usuario = await AuthService.instance.autenticar(username, password);
 
     if (!mounted) return;
 
-    if (isValid) {
+    if (usuario != null) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const FincaHomeScreen()),
       );

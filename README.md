@@ -13,9 +13,10 @@ lib/
 ├── main.dart                        # Punto de entrada, inicialización de servicios
 ├── models/
 │   ├── form_response.dart           # Modelo Hive para respuestas guardadas
-│   └── finca.dart                   # Modelo Hive para fincas registradas
+│   ├── finca.dart                   # Modelo Hive para fincas registradas
+│   └── usuario.dart                 # Usuario autenticado y perfiles
 ├── services/
-│   ├── auth_service.dart            # Autenticación offline con storage cifrado
+│   ├── auth_service.dart            # Autenticación offline con usuarios y perfiles
 │   ├── database_service.dart        # Persistencia local con Hive y metadatos de sync
 │   ├── firestore_service.dart       # Inicialización y acceso a Firestore
 │   ├── sync_service.dart            # Sincronización bidireccional y resolución de conflictos
@@ -70,10 +71,27 @@ lib/
 ## Funcionalidades
 
 ### Autenticación Offline
-- Al iniciar la app, se crea un usuario por defecto (`admin` / `password123`) si no existe ninguno
-- Las contraseñas se almacenan hasheadas con SHA-256, nunca en texto plano
-- Validación contra `flutter_secure_storage` con feedback visual de error
-- Ícono para mostrar/ocultar contraseña
+
+La app crea automáticamente dos usuarios si aún no existen:
+
+| Usuario | Contraseña | Perfil |
+|---|---|---|
+| `admin` | `password123` | Administrador |
+| `tecnico` | `tecnico123` | Tecnico |
+
+- **Ambos perfiles tienen acceso por ahora a las mismas fincas, formularios y a la colección `formularios-fincas`.**
+- El perfil del usuario autenticado se muestra en el menú principal y se puede consultar desde `AuthService.instance.esAdministrador` / `esTecnico`, para futuras restricciones de acciones exclusivas del Administrador:
+  ```dart
+  if (AuthService.instance.esAdministrador) {
+    // Mostrar o habilitar una acción exclusiva del Administrador.
+  }
+  ```
+- El menú principal incluye un botón para **cerrar sesión** y cambiar de usuario.
+- Las contraseñas se almacenan hasheadas con SHA-256, nunca en texto plano.
+- Los usuarios se guardan en `flutter_secure_storage`; si la app tenía el usuario único anterior, sus credenciales se migran automáticamente al perfil Administrador.
+- Validación con feedback visual de error e ícono para mostrar/ocultar contraseña.
+
+> Estas credenciales son valores por defecto de desarrollo. Para producción deben cambiarse y combinarse con Firebase Anonymous Auth (ver más abajo).
 
 ### Gestión de Fincas
 
