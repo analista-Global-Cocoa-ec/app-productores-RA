@@ -181,16 +181,27 @@ Firestore elimina una colección cuando se borra su último documento. Para evit
    npm install -g firebase-tools
    firebase login
    ```
-2. El proyecto ya está vinculado a `app-productores-ra` mediante FlutterFire:
+2. Instalar el CLI de FlutterFire:
+   ```bash
+   dart pub global activate flutterfire_cli
+   ```
+   > Si el comando `flutterfire` no se reconoce, agrega el directorio de binarios globales de Dart al `PATH`:
+   > en Windows suele ser `%LOCALAPPDATA%\Pub\Cache\bin` y en macOS/Linux `~/.pub-cache/bin`.
+3. El proyecto ya está vinculado a `app-productores-ra` mediante FlutterFire:
    - `lib/firebase_options.dart` (Android y Web)
    - `android/app/google-services.json`
    - `firebase.json`
-3. Publicar las reglas de Firestore:
+
+   Si necesitas regenerar la configuración:
+   ```bash
+   flutterfire configure --project=app-productores-ra
+   ```
+4. Publicar las reglas de Firestore:
    ```bash
    firebase deploy --only firestore:rules
    ```
    El archivo `.firebaserc` ya apunta al proyecto `app-productores-ra`.
-4. Verificar que la colección `formularios-fincas` exista en la consola de Firebase.
+5. Verificar que la colección `formularios-fincas` exista en la consola de Firebase.
 
 ### ⚠️ Reglas abiertas (solo desarrollo)
 
