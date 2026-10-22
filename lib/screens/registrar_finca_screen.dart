@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../services/finca_service.dart';
+import '../services/sync_service.dart';
 import '../widgets/numero_selector.dart';
 
 class RegistrarFincaScreen extends StatefulWidget {
@@ -56,11 +59,16 @@ class _RegistrarFincaScreenState extends State<RegistrarFincaScreen> {
 
     setState(() => _isSaving = true);
 
-    await FincaService.instance.registrarFinca(
+    final finca = await FincaService.instance.registrarFinca(
       codigo: _codigoFinca,
       canton: _cantonSeleccionado!,
       prefijo: _prefijoSeleccionado!,
       nombreAgricultor: _nombreAgricultorController.text.trim(),
+    );
+
+    // Intentar publicar los datos generales sin bloquear el registro local.
+    unawaited(
+      SyncService.instance.sincronizarFinca(fincaId: finca.identificador),
     );
 
     if (!mounted) return;

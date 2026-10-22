@@ -20,10 +20,7 @@ void main() {
         SyncUtils.templateBaseId('registro_cosecha:123456'),
         'registro_cosecha',
       );
-      expect(
-        SyncUtils.templateBaseId('registro_cosecha'),
-        'registro_cosecha',
-      );
+      expect(SyncUtils.templateBaseId('registro_cosecha'), 'registro_cosecha');
     });
 
     test('el hash no depende del orden de las claves', () {
@@ -36,10 +33,7 @@ void main() {
         'b': 1,
       };
 
-      expect(
-        SyncUtils.hashRespuestas(a),
-        SyncUtils.hashRespuestas(b),
-      );
+      expect(SyncUtils.hashRespuestas(a), SyncUtils.hashRespuestas(b));
     });
 
     test('el hash cambia cuando cambia una respuesta', () {
@@ -50,6 +44,41 @@ void main() {
         SyncUtils.hashRespuestas(original),
         isNot(SyncUtils.hashRespuestas(actualizado)),
       );
+    });
+
+    test('el hash de los datos generales cambia con el código y el estado', () {
+      final original = SyncUtils.hashFinca(
+        codigo: 'BAB-001',
+        canton: 'Babahoyo',
+        prefijo: 'BAB',
+        estado: 'Activa',
+        nombreAgricultor: 'Juan Pérez',
+      );
+      final mismoContenido = SyncUtils.hashFinca(
+        codigo: 'BAB-001',
+        canton: 'Babahoyo',
+        prefijo: 'BAB',
+        estado: 'Activa',
+        nombreAgricultor: ' Juan Pérez ',
+      );
+      final otroCodigo = SyncUtils.hashFinca(
+        codigo: 'BAB-002',
+        canton: 'Babahoyo',
+        prefijo: 'BAB',
+        estado: 'Activa',
+        nombreAgricultor: 'Juan Pérez',
+      );
+      final inactiva = SyncUtils.hashFinca(
+        codigo: 'BAB-001',
+        canton: 'Babahoyo',
+        prefijo: 'BAB',
+        estado: 'Inactiva',
+        nombreAgricultor: 'Juan Pérez',
+      );
+
+      expect(mismoContenido, original);
+      expect(otroCodigo, isNot(original));
+      expect(inactiva, isNot(original));
     });
 
     test('sanitiza fechas para Firestore', () {

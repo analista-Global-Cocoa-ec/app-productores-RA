@@ -18,10 +18,10 @@ lib/
 ├── services/
 │   ├── auth_service.dart            # Autenticación offline con usuarios y perfiles
 │   ├── database_service.dart        # Persistencia local con Hive y metadatos de sync
-│   ├── firestore_service.dart       # Inicialización y acceso a Firestore
-│   ├── sync_service.dart            # Sincronización bidireccional y resolución de conflictos
+│   ├── firestore_service.dart       # Acceso a las colecciones `fincas` y `formularios-fincas`
+│   ├── sync_service.dart            # Sincronización bidireccional de fincas/formularios y conflictos
 │   ├── sync_utils.dart              # IDs deterministas, hashes y sanitización
-│   ├── finca_service.dart           # Lógica de fincas: códigos, prefijos, números
+│   ├── finca_service.dart           # Lógica de fincas: códigos, prefijos, números y datos generales
 │   └── template_service.dart        # Carga y parseo de plantillas JSON
 ├── templates/
 │   ├── ficha_agricultor.dart        # Plantilla: Ficha del agricultor
@@ -34,6 +34,7 @@ lib/
 │   ├── registrar_finca_screen.dart  # Formulario de registro de finca
 │   ├── editar_finca_screen.dart     # Lista de fincas registradas
 │   ├── finca_formularios_screen.dart # Formularios disponibles para una finca
+│   ├── finca_datos_generales_screen.dart # Datos generales de la finca
 │   └── form_screen.dart             # Renderizado dinámico de formulario
 └── widgets/
     └── numero_selector.dart         # Selector de números (PopupMenuButton)
@@ -79,7 +80,7 @@ La app crea automáticamente dos usuarios si aún no existen:
 | `admin` | `password123` | Administrador |
 | `tecnico` | `tecnico123` | Tecnico |
 
-- **Ambos perfiles tienen acceso por ahora a las mismas fincas, formularios y a la colección `formularios-fincas`.**
+- **Ambos perfiles tienen acceso por ahora a las mismas fincas, formularios y a las colecciones `fincas` y `formularios-fincas`.**
 - El perfil del usuario autenticado se muestra en el menú principal y se puede consultar desde `AuthService.instance.esAdministrador` / `esTecnico`, para futuras restricciones de acciones exclusivas del Administrador:
   ```dart
   if (AuthService.instance.esAdministrador) {
@@ -101,18 +102,32 @@ La app crea automáticamente dos usuarios si aún no existen:
   - Babahoyo: BAB, BABS, BABN
   - Naranjal: NJL, NJL1, NJL2
   - La Troncal: TCL, TCLA, TCLC
-- Selector de número disponible: números liberados por fincas inactivas se reutilizan primero, luego se asigna el siguiente consecutivo
+- Selector de número disponible para nuevas fincas: números liberados por fincas inactivas se reutilizan primero, luego se asigna el siguiente consecutivo
 - Código mostrado claramente antes de guardar (ej: `BAB-002`)
 - Finca se guarda con estado "Activa"
 
 **Editar Finca:**
 - Lista vertical de todas las fincas registradas
 - Indicador visual de estado Activa/Inactiva
+- Interruptor en cada finca para alternar entre **Activa** e **Inactiva**
+  - Al inactivar se solicita confirmación y el número de la finca queda disponible para reutilizarse
+  - Por ahora ambos perfiles (Administrador y Tecnico) pueden cambiar el estado
 - Cada finca muestra sus formularios disponibles con alertas de color:
   - Rojo: 100% vacío
   - Amarillo: parcialmente completado
   - Verde: 100% completo
 - Los formularios conservan los valores después de guardar
+
+**Datos generales de la finca:**
+- Es el **primer formulario** de la lista de formularios disponibles.
+- Permite actualizar:
+  - **Código de la finca** mediante cantón, prefijo y número, aplicando las mismas reglas de disponibilidad (no permite códigos de otras fincas).
+  - **Nombre del agricultor**.
+  - **Estado Activa/Inactiva**, con confirmación al inactivar.
+- Al cambiar el código:
+  - Se actualizan las respuestas locales de la finca para que sigan asociadas al nuevo código.
+  - Se migran los documentos de `formularios-fincas` en Firestore al nuevo ID determinista.
+- Los cambios se guardan primero en Hive y se intentan subir inmediatamente a la colección `fincas` de Firestore.
 
 ### Formularios Dinámicos
 
@@ -136,7 +151,8 @@ Cada formulario define campos de tipos: texto, número, fecha, dropdown y switch
 La app es **local-first**: Hive sigue siendo la fuente de verdad y Firestore es la capa de nube. Si no hay conexión o la plataforma no tiene Firebase configurado, todo sigue funcionando localmente.
 
 **Cuándo se sincroniza:**
-- Al pulsar **Guardar** en un formulario: primero se guarda en Hive y luego se intenta subir a Firestore sin bloquear la UI.
+- Al pulsar **Guardar** en un formulario o en **Datos generales**: primero se guarda en Hive y luego se intenta subir a Firestore sin bloquear la UI.
+- Al registrar una finca se intenta publicar su documento de datos generales en la nube.
 - Al iniciar la app: se suben los registros locales pendientes y se descargan los cambios hechos en la nube.
 - Al recuperar la conexión a internet (`connectivity_plus`): se ejecuta una sincronización completa y se muestra un aviso global con el resultado, sin importar en qué pantalla esté el usuario.
 - Manualmente con el botón de nube (`cloud_sync_outlined`) en la pantalla de formularios de una finca.
@@ -144,14 +160,33 @@ La app es **local-first**: Hive sigue siendo la fuente de verdad y Firestore es 
 Las pantallas de **Actualizar Finca** y de formularios se refrescan automáticamente cuando termina una sincronización, para mostrar las fincas o respuestas descargadas sin necesidad de salir y volver a entrar.
 
 **Cómo se identifican los documentos:**
-- ID determinista: `{fincaCodigo}_{templateId}` (ej. `BAB-002_registro_cosecha`).
+- Datos generales: colección `fincas`, ID estable `{fincaId}` (UUID). El código de la finca es un campo editable y no forma parte de la identidad.
+- Formularios: ID determinista `{fincaCodigo}_{templateId}` (ej. `BAB-002_registro_cosecha`).
 - La barra `/` se reemplaza por `-` para que sea un ID válido.
+- Si cambia el código de una finca, los documentos de formularios se migran al nuevo ID y se elimina el documento anterior.
+
+**Esquema del documento en `fincas`:**
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `fincaId` | string | UUID estable de la finca |
+| `codigo` | string | Código actual (ej. `BAB-002`) |
+| `canton` | string | Cantón de la finca |
+| `prefijo` | string | Prefijo del código (ej. `BAB`) |
+| `estado` | string | `Activa` o `Inactiva` |
+| `nombreAgricultor` | string | Nombre del productor |
+| `hashDatos` | string | SHA-256 canónico de los datos generales |
+| `actualizadoEn` | timestamp | Marca del servidor (`FieldValue.serverTimestamp()`) |
+| `actualizadoLocalEn` | string (ISO-8601) | Marca del dispositivo, usada para conflictos |
+| `versionEsquema` | number | Versión del esquema (actualmente `1`) |
+| `origen` | string | `app-productores-RA` |
 
 **Esquema del documento en `formularios-fincas`:**
 
 | Campo | Tipo | Descripción |
 |---|---|---|
-| `fincaCodigo` | string | Código único de la finca (ej. `BAB-002`) |
+| `fincaId` | string | UUID estable de la finca (opcional en documentos antiguos) |
+| `fincaCodigo` | string | Código de la finca al momento de la sincronización |
 | `nombreAgricultor` | string | Nombre del productor |
 | `canton` | string | Cantón de la finca |
 | `templateId` | string | ID base de la plantilla (ej. `registro_cosecha`) |
@@ -166,11 +201,13 @@ Las pantallas de **Actualizar Finca** y de formularios se refrescan automáticam
 **Resolución de conflictos:**
 - Si el hash local y el remoto coinciden, no se escribe nada.
 - Si difieren, gana el registro con `timestamp` más reciente (local vs. `actualizadoLocalEn` remoto). Es una política *last-write-wins* por formulario completo.
+- Los **datos generales de la finca** usan la misma política con `actualizadoLocalEn` y `hashDatos`.
 - Si las fechas son iguales, se prioriza el registro local que aún no estaba sincronizado.
 - Si un documento remoto referencia una finca que no existe localmente, se crea una finca placeholder para no perder la respuesta.
+- Si cambia el código de una finca, se migran tanto las claves locales de Hive como los documentos remotos de sus formularios.
 
 **Documento dummy:**
-Firestore elimina una colección cuando se borra su último documento. Para evitarlo se puede mantener un documento como `{ "saludo": "Hola mundo" }`. La app lo **ignora** porque no cumple el esquema (`fincaCodigo`, `templateId` y `respuestas` son obligatorios).
+Firestore elimina una colección cuando se borra su último documento. Para evitarlo se puede mantener un documento como `{ "saludo": "Hola mundo" }`. La app lo **ignora** porque no cumple el esquema (`fincaCodigo`, `templateId` y `respuestas` son obligatorios en `formularios-fincas`; `fincaId` y `codigo` en `fincas`).
 
 ---
 
@@ -201,11 +238,11 @@ Firestore elimina una colección cuando se borra su último documento. Para evit
    firebase deploy --only firestore:rules
    ```
    El archivo `.firebaserc` ya apunta al proyecto `app-productores-ra`.
-5. Verificar que la colección `formularios-fincas` exista en la consola de Firebase.
+5. Verificar que las colecciones `fincas` y `formularios-fincas` existan en la consola de Firebase. La app crea los documentos automáticamente al sincronizar.
 
 ### ⚠️ Reglas abiertas (solo desarrollo)
 
-`firestore.rules` permite actualmente lectura y escritura **sin autenticación** únicamente en `formularios-fincas`. Esto es aceptable mientras se prueba, pero **no debe usarse en producción**: cualquiera con la configuración de la app podría leer o modificar los datos.
+`firestore.rules` permite actualmente lectura y escritura **sin autenticación** únicamente en las colecciones `fincas` y `formularios-fincas`. Esto es aceptable mientras se prueba, pero **no debe usarse en producción**: cualquiera con la configuración de la app podría leer o modificar los datos.
 
 ### Recomendación: Firebase Anonymous Auth
 
@@ -223,6 +260,10 @@ Antes de publicar, se recomienda:
    Agregar la dependencia con `flutter pub add firebase_auth`.
 3. Endurecer `firestore.rules` para exigir usuario autenticado:
    ```javascript
+   match /fincas/{docId} {
+     allow read, write: if request.auth != null;
+   }
+
    match /formularios-fincas/{docId} {
      allow read, write: if request.auth != null;
    }

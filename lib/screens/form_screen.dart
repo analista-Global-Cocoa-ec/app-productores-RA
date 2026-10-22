@@ -13,10 +13,16 @@ import '../widgets/firma_pad.dart';
 import '../widgets/form_field_label.dart';
 
 class FormScreen extends StatefulWidget {
+  final String? fincaId;
   final String? fincaCodigo;
   final String? templateId;
 
-  const FormScreen({super.key, this.fincaCodigo, this.templateId});
+  const FormScreen({
+    super.key,
+    this.fincaId,
+    this.fincaCodigo,
+    this.templateId,
+  });
 
   @override
   State<FormScreen> createState() => _FormScreenState();
@@ -26,10 +32,29 @@ class _FormScreenState extends State<FormScreen> {
   final _formKey = GlobalKey<FormBuilderState>();
   Map<String, dynamic>? _template;
   Map<String, dynamic>? _respuestasGuardadas;
-  Finca? _finca;
   int _resetVersion = 0;
   bool _isLoading = true;
   bool _isSaving = false;
+
+  /// Finca actual resuelta por ID estable. Si el código cambió mientras el
+  /// formulario estaba abierto, se usa el código nuevo al guardar.
+  Finca? get _fincaActual {
+    final fincaId = widget.fincaId;
+    if (fincaId != null) {
+      final finca = FincaService.instance.getFincaPorId(fincaId);
+      if (finca != null) return finca;
+    }
+    final codigo = widget.fincaCodigo;
+    return codigo == null
+        ? null
+        : FincaService.instance.getFincaPorCodigo(codigo);
+  }
+
+  String? get _codigoFincaActual {
+    final finca = _fincaActual;
+    if (finca != null) return finca.codigo;
+    return widget.fincaCodigo;
+  }
 
   @override
   void initState() {
@@ -43,22 +68,18 @@ class _FormScreenState extends State<FormScreen> {
       final template = await TemplateService.instance.loadTemplate(templateId);
 
       Map<String, dynamic>? guardadas;
-      if (widget.fincaCodigo != null) {
+      final codigoFinca = _codigoFincaActual;
+      if (codigoFinca != null) {
         guardadas = await DatabaseService.instance.getFormResponseForFinca(
-          fincaCodigo: widget.fincaCodigo!,
+          fincaCodigo: codigoFinca,
           templateId: templateId,
         );
       }
-
-      final finca = widget.fincaCodigo != null
-          ? FincaService.instance.getFincaPorCodigo(widget.fincaCodigo!)
-          : null;
 
       if (mounted) {
         setState(() {
           _template = template;
           _respuestasGuardadas = guardadas;
-          _finca = finca;
           _isLoading = false;
         });
       }
@@ -74,11 +95,12 @@ class _FormScreenState extends State<FormScreen> {
 
   /// Resuelve el valor de los campos de tipo `fixed` a partir de la finca.
   String _valorFijo(Map<String, dynamic> field) {
+    final finca = _fincaActual;
     switch (field['source']) {
       case 'finca_codigo':
-        return _finca?.codigo ?? widget.fincaCodigo ?? '';
+        return finca?.codigo ?? widget.fincaCodigo ?? '';
       case 'finca_nombre_agricultor':
-        return _finca?.nombreAgricultor?.trim() ?? '';
+        return finca?.nombreAgricultor?.trim() ?? '';
       default:
         return '';
     }
@@ -134,10 +156,11 @@ class _FormScreenState extends State<FormScreen> {
 
     final templateId = _template!['id'] as String;
     final marcaLocal = DateTime.now();
+    final codigoFinca = _codigoFincaActual;
     await DatabaseService.instance.saveFormResponse(
       templateId: templateId,
       respuestas: responses,
-      fincaCodigo: widget.fincaCodigo,
+      fincaCodigo: codigoFinca,
     );
 
     if (!mounted) return;
@@ -160,8 +183,8 @@ class _FormScreenState extends State<FormScreen> {
       ),
     );
 
-    if (widget.fincaCodigo != null) {
-      unawaited(_sincronizarEnNube(responses, marcaLocal));
+    if (codigoFinca != null) {
+      unawaited(_sincronizarEnNube(responses, marcaLocal, codigoFinca));
     }
   }
 
@@ -169,9 +192,10 @@ class _FormScreenState extends State<FormScreen> {
   Future<void> _sincronizarEnNube(
     Map<String, dynamic> respuestas,
     DateTime timestamp,
+    String fincaCodigo,
   ) async {
     final resultado = await SyncService.instance.sincronizarFormulario(
-      fincaCodigo: widget.fincaCodigo!,
+      fincaCodigo: fincaCodigo,
       templateId: _template!['id'] as String,
       templateTitulo: _template!['titulo'] as String? ?? '',
       respuestas: respuestas,
@@ -506,8 +530,9 @@ class _FormScreenState extends State<FormScreen> {
     }
 
     final campos = (_template!['campos'] as List).cast<Map<String, dynamic>>();
-    final titulo = widget.fincaCodigo != null
-        ? '${_template!['titulo']} - ${widget.fincaCodigo}'
+    final codigoFinca = _codigoFincaActual;
+    final titulo = codigoFinca != null
+        ? '${_template!['titulo']} - $codigoFinca'
         : _template!['titulo'] as String;
 
     return Scaffold(

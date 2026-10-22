@@ -95,6 +95,39 @@ class DatabaseService {
     return matches.first.respuestas;
   }
 
+  /// Actualiza las claves locales de todas las respuestas de una finca
+  /// cuando cambia su código.
+  ///
+  /// La clave de Hive es `templateId:hashCode(fincaCodigo)`, por lo que no
+  /// basta con cambiar `fincaCodigo`: también hay que reconstruir la clave
+  /// compuesta para que la búsqueda siga funcionando.
+  Future<void> migrarCodigoFinca({
+    required String codigoAnterior,
+    required String codigoNuevo,
+  }) async {
+    if (codigoAnterior == codigoNuevo) return;
+
+    for (final registro in _formBox.values.toList()) {
+      final templateBase =
+          registro.templateBaseId ??
+          SyncUtils.templateBaseId(registro.templateId);
+      final claveAnterior = '$templateBase:${codigoAnterior.hashCode}';
+      final pertenece =
+          registro.fincaCodigo == codigoAnterior ||
+          (registro.fincaCodigo == null &&
+              registro.templateId == claveAnterior);
+      if (!pertenece) continue;
+
+      registro.fincaCodigo = codigoNuevo;
+      registro.templateBaseId = templateBase;
+      registro.templateId = '$templateBase:${codigoNuevo.hashCode}';
+      // El documento remoto aún puede estar con el código anterior; una
+      // sincronización posterior lo migrará y marcará este registro.
+      registro.sincronizado = false;
+      await registro.save();
+    }
+  }
+
   /// Marca un registro local como sincronizado con la nube.
   Future<void> marcarSincronizado(
     FormResponse registro, {

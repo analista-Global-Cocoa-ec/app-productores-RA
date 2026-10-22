@@ -26,6 +26,26 @@ class SyncUtils {
     return sha256.convert(utf8.encode(jsonEncode(canonico))).toString();
   }
 
+  /// Calcula un hash estable de los datos generales de una finca.
+  ///
+  /// Se excluyen los metadatos de sincronización (ID, fechas) para comparar
+  /// únicamente el contenido editable.
+  static String hashFinca({
+    required String codigo,
+    required String canton,
+    required String prefijo,
+    required String estado,
+    String? nombreAgricultor,
+  }) {
+    return hashRespuestas({
+      'codigo': codigo,
+      'canton': canton,
+      'prefijo': prefijo,
+      'estado': estado,
+      'nombreAgricultor': (nombreAgricultor ?? '').trim(),
+    });
+  }
+
   /// Convierte las respuestas a tipos aceptados por Firestore.
   static Map<String, dynamic> sanitizarRespuestas(
     Map<String, dynamic> respuestas,

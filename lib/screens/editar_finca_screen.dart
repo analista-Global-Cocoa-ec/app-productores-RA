@@ -76,6 +76,95 @@ class _EditarFincaScreenState extends State<EditarFincaScreen> {
         backgroundColor: Colors.green,
       ),
     );
+
+    unawaited(_sincronizarFincaEnNube(finca));
+  }
+
+  Future<void> _alternarEstado(Finca finca) async {
+    final estaActiva = finca.estado == 'Activa';
+
+    if (estaActiva) {
+      final confirmar = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Inactivar finca'),
+          content: Text(
+            'La finca ${finca.codigo} pasará a estado Inactiva. '
+            'Su número quedará disponible para reutilizarse en otra finca.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Inactivar'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmar != true) return;
+    }
+
+    if (!mounted) return;
+
+    if (estaActiva) {
+      await FincaService.instance.inactivarFinca(finca.codigo);
+    } else {
+      await FincaService.instance.activarFinca(finca.codigo);
+    }
+
+    if (!mounted) return;
+
+    await _loadFincas();
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Finca ${finca.codigo} ${estaActiva ? 'inactivada' : 'activada'}',
+        ),
+        backgroundColor: estaActiva ? Colors.orange : Colors.green,
+      ),
+    );
+
+    unawaited(_sincronizarFincaEnNube(finca));
+  }
+
+  Future<void> _sincronizarFincaEnNube(Finca finca) async {
+    final resultado = await SyncService.instance.sincronizarFinca(
+      fincaId: finca.identificador,
+    );
+
+    if (!mounted) return;
+
+    final String mensaje;
+    final Color color;
+    if (!resultado.disponible) {
+      mensaje =
+          'Guardado localmente. La nube no está disponible en esta plataforma.';
+      color = Colors.orange;
+    } else if (resultado.errores > 0) {
+      mensaje = 'Guardado localmente. No se pudo subir ahora; se reintentará al recuperar la conexión.';
+      color = Colors.orange;
+    } else {
+      mensaje = 'Datos de la finca sincronizados en la nube';
+      color = Colors.green;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(mensaje),
+          backgroundColor: color,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
   }
 
   @override
@@ -122,6 +211,8 @@ class _EditarFincaScreenState extends State<EditarFincaScreen> {
                             tieneNombre
                                 ? nombreAgricultor
                                 : 'Sin agricultor registrado',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontStyle: tieneNombre
                                   ? FontStyle.normal
@@ -130,6 +221,8 @@ class _EditarFincaScreenState extends State<EditarFincaScreen> {
                           ),
                           Text(
                             '${finca.canton} - ${finca.estado}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.grey[600],
@@ -146,7 +239,17 @@ class _EditarFincaScreenState extends State<EditarFincaScreen> {
                             tooltip: 'Editar nombre del agricultor',
                             onPressed: () => _editarNombreAgricultor(finca),
                           ),
-                          const Icon(Icons.chevron_right),
+                          Tooltip(
+                            message: finca.estado == 'Activa'
+                                ? 'Inactivar finca'
+                                : 'Activar finca',
+                            child: Switch(
+                              value: finca.estado == 'Activa',
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              onChanged: (_) => _alternarEstado(finca),
+                            ),
+                          ),
                         ],
                       ),
                       onTap: () {

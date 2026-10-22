@@ -40,4 +40,28 @@ void main() {
       );
     });
   });
+
+  group('FirestoreService.esFincaValida', () {
+    test('acepta un documento de datos generales', () {
+      expect(
+        FirestoreService.esFincaValida({
+          'fincaId': 'finca-uuid',
+          'codigo': 'BAB-002',
+        }),
+        isTrue,
+      );
+    });
+
+    test('rechaza documentos sin identidad o código', () {
+      expect(FirestoreService.esFincaValida({'saludo': 'Hola mundo'}), isFalse);
+      expect(
+        FirestoreService.esFincaValida({'fincaId': '', 'codigo': 'BAB-002'}),
+        isFalse,
+      );
+      expect(
+        FirestoreService.esFincaValida({'fincaId': 'finca-uuid', 'codigo': ''}),
+        isFalse,
+      );
+    });
+  });
 }

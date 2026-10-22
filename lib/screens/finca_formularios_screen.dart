@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 
 import '../models/finca.dart';
 import '../services/database_service.dart';
+import '../services/finca_service.dart';
 import '../services/sync_service.dart';
 import '../services/template_service.dart';
+import 'finca_datos_generales_screen.dart';
 import 'form_screen.dart';
 
 /// Pantalla que muestra los formularios disponibles para una finca
@@ -22,6 +24,7 @@ class FincaFormulariosScreen extends StatefulWidget {
 class _FincaFormulariosScreenState extends State<FincaFormulariosScreen> {
   Map<String, Map<String, dynamic>?> _respuestasPorFormulario = {};
   Map<String, Map<String, dynamic>?> _templates = {};
+  late Finca _finca;
   bool _isLoading = true;
   bool _isSyncing = false;
   StreamSubscription<ResultadoSync>? _syncSubscription;
@@ -29,6 +32,9 @@ class _FincaFormulariosScreenState extends State<FincaFormulariosScreen> {
   @override
   void initState() {
     super.initState();
+    _finca =
+        FincaService.instance.getFincaPorId(widget.finca.identificador) ??
+        widget.finca;
     _loadData();
 
     // Refrescar los estados de los formularios cuando una sincronización
@@ -46,6 +52,8 @@ class _FincaFormulariosScreenState extends State<FincaFormulariosScreen> {
   }
 
   Future<void> _loadData() async {
+    final fincaActual =
+        FincaService.instance.getFincaPorId(_finca.identificador) ?? _finca;
     final formularios = _getFormulariosDisponibles();
     final respuestas = <String, Map<String, dynamic>?>{};
     final templates = <String, Map<String, dynamic>?>{};
@@ -55,7 +63,7 @@ class _FincaFormulariosScreenState extends State<FincaFormulariosScreen> {
 
       // Cargar respuestas guardadas
       final resp = await DatabaseService.instance.getFormResponseForFinca(
-        fincaCodigo: widget.finca.codigo,
+        fincaCodigo: fincaActual.codigo,
         templateId: id,
       );
       respuestas[id] = resp;
@@ -71,6 +79,7 @@ class _FincaFormulariosScreenState extends State<FincaFormulariosScreen> {
 
     if (mounted) {
       setState(() {
+        _finca = fincaActual;
         _respuestasPorFormulario = respuestas;
         _templates = templates;
         _isLoading = false;
@@ -200,7 +209,7 @@ class _FincaFormulariosScreenState extends State<FincaFormulariosScreen> {
     if (_isLoading) {
       return Scaffold(
         appBar: AppBar(
-          title: Text('Finca ${widget.finca.codigo}'),
+          title: Text('Finca ${_finca.codigo}'),
           centerTitle: true,
         ),
         body: const SafeArea(
@@ -214,7 +223,7 @@ class _FincaFormulariosScreenState extends State<FincaFormulariosScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Finca ${widget.finca.codigo}'),
+        title: Text('Finca ${_finca.codigo}'),
         centerTitle: true,
         actions: [
           if (_isSyncing)
@@ -240,9 +249,47 @@ class _FincaFormulariosScreenState extends State<FincaFormulariosScreen> {
         top: false,
         child: ListView.builder(
           padding: const EdgeInsets.all(16),
-          itemCount: formularios.length,
+          itemCount: formularios.length + 1,
           itemBuilder: (context, index) {
-            final formulario = formularios[index];
+            if (index == 0) {
+              final color = Theme.of(context).colorScheme.primary;
+              return Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(
+                    color: color.withValues(alpha: 0.5),
+                    width: 1.5,
+                  ),
+                ),
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: color.withValues(alpha: 0.15),
+                    child: Icon(Icons.badge_outlined, color: color),
+                  ),
+                  title: const Text(
+                    'Datos generales',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    'Código ${_finca.codigo} · ${_finca.estado}',
+                    style: TextStyle(color: color),
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            FincaDatosGeneralesScreen(finca: _finca),
+                      ),
+                    );
+                    await _loadData();
+                  },
+                ),
+              );
+            }
+
+            final formulario = formularios[index - 1];
             final estado = _getEstadoFormulario(formulario['id'] as String);
             final color = _getColorForEstado(estado);
 
@@ -277,7 +324,8 @@ class _FincaFormulariosScreenState extends State<FincaFormulariosScreen> {
                   await Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => FormScreen(
-                        fincaCodigo: widget.finca.codigo,
+                        fincaId: _finca.identificador,
+                        fincaCodigo: _finca.codigo,
                         templateId: formulario['id'] as String,
                       ),
                     ),

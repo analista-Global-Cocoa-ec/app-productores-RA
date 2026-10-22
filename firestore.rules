@@ -2,9 +2,14 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Durante el desarrollo se permite acceso abierto únicamente a la
-    // colección de formularios. Antes de publicar la app, reemplazar por
-    // reglas basadas en autenticación (ver README: Firebase Anonymous Auth).
+    // Durante el desarrollo se permite acceso abierto únicamente a las
+    // colecciones de fincas y formularios. Antes de publicar la app,
+    // reemplazar por reglas basadas en autenticación (ver README: Firebase
+    // Anonymous Auth).
+    match /fincas/{docId} {
+      allow read, write: if true;
+    }
+
     match /formularios-fincas/{docId} {
       allow read, write: if true;
     }
