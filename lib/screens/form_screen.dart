@@ -93,7 +93,8 @@ class _FormScreenState extends State<FormScreen> {
     }
   }
 
-  /// Resuelve el valor de los campos de tipo `fixed` a partir de la finca.
+  /// Resuelve el valor de los campos de tipo `fixed` a partir de la finca
+  /// o de un valor constante definido en la plantilla.
   String _valorFijo(Map<String, dynamic> field) {
     final finca = _fincaActual;
     switch (field['source']) {
@@ -102,7 +103,57 @@ class _FormScreenState extends State<FormScreen> {
       case 'finca_nombre_agricultor':
         return finca?.nombreAgricultor?.trim() ?? '';
       default:
-        return '';
+        return field['value']?.toString() ?? '';
+    }
+  }
+
+  /// Hora actual en América/Guayaquil (UTC-5, sin horario de verano).
+  TimeOfDay _horaActualGuayaquil() {
+    final ahora = DateTime.now().toUtc().subtract(const Duration(hours: 5));
+    return TimeOfDay(hour: ahora.hour, minute: ahora.minute);
+  }
+
+  /// Convierte una hora guardada en formato `HH:mm` a [TimeOfDay].
+  TimeOfDay? _horaDesdeTexto(String? texto) {
+    if (texto == null || texto.isEmpty) return null;
+
+    final partes = texto.split(':');
+    if (partes.length != 2) return null;
+
+    final hora = int.tryParse(partes[0]);
+    final minuto = int.tryParse(partes[1]);
+    if (hora == null ||
+        minuto == null ||
+        hora < 0 ||
+        hora > 23 ||
+        minuto < 0 ||
+        minuto > 59) {
+      return null;
+    }
+
+    return TimeOfDay(hour: hora, minute: minuto);
+  }
+
+  String _formatearHora(TimeOfDay hora) {
+    final hh = hora.hour.toString().padLeft(2, '0');
+    final mm = hora.minute.toString().padLeft(2, '0');
+    return '$hh:$mm';
+  }
+
+  /// Agrega a [responses] los valores de los campos fijos, incluidos los
+  /// que están dentro de una sección.
+  void _aplicarValoresFijos(
+    List<Map<String, dynamic>> campos,
+    Map<String, dynamic> responses,
+  ) {
+    for (final campo in campos) {
+      if (campo['type'] == 'fixed') {
+        responses[campo['key'] as String] = _valorFijo(campo);
+      } else if (campo['type'] == 'section') {
+        final subcampos = (campo['campos'] as List)
+            .cast<Map<String, dynamic>>();
+        _aplicarValoresFijos(subcampos, responses);
+      }
     }
   }
 
@@ -110,6 +161,7 @@ class _FormScreenState extends State<FormScreen> {
     final type = field['type'] as String;
     final isRequired = field['required'] as bool? ?? false;
     final positive = field['positive'] == true;
+    final integer = field['integer'] == true;
 
     return (dynamic value) {
       final texto = value?.toString().trim() ?? '';
@@ -119,6 +171,9 @@ class _FormScreenState extends State<FormScreen> {
       if (type == 'number') {
         final numero = double.tryParse(texto.replaceAll(',', '.'));
         if (numero == null) return 'Ingrese un número válido';
+        if (integer && int.tryParse(texto) == null) {
+          return 'Ingrese un número entero';
+        }
         if (positive && numero <= 0) return 'Ingrese un número mayor a 0';
       }
       return null;
@@ -142,11 +197,7 @@ class _FormScreenState extends State<FormScreen> {
 
     // Los campos fijos no se editan, pero se guardan con su valor actual.
     final campos = (_template!['campos'] as List).cast<Map<String, dynamic>>();
-    for (final campo in campos) {
-      if (campo['type'] == 'fixed') {
-        responses[campo['key'] as String] = _valorFijo(campo);
-      }
-    }
+    _aplicarValoresFijos(campos, responses);
 
     responses.forEach((key, value) {
       if (value is DateTime) {
@@ -308,6 +359,39 @@ class _FormScreenState extends State<FormScreen> {
           ),
         );
 
+      case 'section':
+        final subcampos = (field['campos'] as List)
+            .cast<Map<String, dynamic>>();
+        final descripcion = field['descripcion'] as String?;
+        return Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                if (descripcion != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    descripcion,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+                const Divider(height: 20),
+                for (var i = 0; i < subcampos.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 12),
+                  _buildField(subcampos[i]),
+                ],
+              ],
+            ),
+          ),
+        );
+
       case 'text':
         return _withLabel(
           field,
@@ -326,7 +410,9 @@ class _FormScreenState extends State<FormScreen> {
           FormBuilderTextField(
             name: key,
             initialValue: valorInicial?.toString() ?? '',
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            keyboardType: TextInputType.numberWithOptions(
+              decimal: field['integer'] != true,
+            ),
             decoration: _decoration(
               hint: hint,
               suffixText: field['suffix'] as String?,
@@ -449,13 +535,72 @@ class _FormScreenState extends State<FormScreen> {
           ),
         );
 
+      case 'time':
+        final horaGuardada = valorInicial?.toString();
+        return _withLabel(
+          field,
+          FormBuilderField<String>(
+            name: key,
+            initialValue: horaGuardada,
+            validator: validator,
+            builder: (field) {
+              final horaTexto = field.value ?? '';
+              return InkWell(
+                borderRadius: BorderRadius.circular(4),
+                onTap: () async {
+                  final seleccionada = await showTimePicker(
+                    context: context,
+                    initialTime:
+                        _horaDesdeTexto(field.value) ?? _horaActualGuayaquil(),
+                    builder: (pickerContext, child) {
+                      return MediaQuery(
+                        data: MediaQuery.of(pickerContext)
+                            .copyWith(alwaysUse24HourFormat: true),
+                        child: child!,
+                      );
+                    },
+                  );
+
+                  if (seleccionada != null) {
+                    field.didChange(_formatearHora(seleccionada));
+                  }
+                },
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    border: const OutlineInputBorder(),
+                    suffixIcon: const Icon(Icons.access_time),
+                    errorText: field.errorText,
+                  ),
+                  isEmpty: horaTexto.isEmpty,
+                  child: Text(
+                    horaTexto.isEmpty
+                        ? (hint ?? 'Seleccione una hora')
+                        : horaTexto,
+                    style: horaTexto.isEmpty
+                        ? TextStyle(color: Theme.of(context).hintColor)
+                        : null,
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+
       case 'dropdown':
         final options = (field['options'] as List).cast<String>();
+        final valorGuardado = valorInicial?.toString();
+        final valorPorDefecto = field['default'] as String?;
+        final valorSeleccionado = options.contains(valorGuardado)
+            ? valorGuardado
+            : options.contains(valorPorDefecto)
+            ? valorPorDefecto
+            : null;
+
         return _withLabel(
           field,
           FormBuilderDropdown<String>(
             name: key,
-            initialValue: valorInicial?.toString(),
+            initialValue: valorSeleccionado,
             decoration: const InputDecoration(border: OutlineInputBorder()),
             items: options
                 .map((opt) => DropdownMenuItem(value: opt, child: Text(opt)))

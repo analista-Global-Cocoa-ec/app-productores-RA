@@ -108,14 +108,14 @@ La app crea automáticamente dos usuarios si aún no existen:
 
 **Editar Finca:**
 - Lista vertical de todas las fincas registradas
+- Cada finca muestra su código, nombre del agricultor, cantón y estado
 - Indicador visual de estado Activa/Inactiva
-- Interruptor en cada finca para alternar entre **Activa** e **Inactiva**
-  - Al inactivar se solicita confirmación y el número de la finca queda disponible para reutilizarse
-  - Por ahora ambos perfiles (Administrador y Tecnico) pueden cambiar el estado
-- Cada finca muestra sus formularios disponibles con alertas de color:
-  - Rojo: 100% vacío
-  - Amarillo: parcialmente completado
-  - Verde: 100% completo
+- La pantalla de listado es de consulta y acceso
+- Al tocar una finca se abre su lista de formularios disponibles; los cambios de **código, nombre del agricultor y estado** se realizan en **Datos generales**
+- Los formularios se muestran con alertas de color:
+  - Rojo: formulario vacío
+  - Amarillo: faltan campos obligatorios
+  - Verde: campos obligatorios completos (los campos opcionales vacíos no bloquean el verde)
 - Los formularios conservan los valores después de guardar
 
 **Datos generales de la finca:**
@@ -124,9 +124,10 @@ La app crea automáticamente dos usuarios si aún no existen:
   - **Código de la finca** mediante cantón, prefijo y número, aplicando las mismas reglas de disponibilidad (no permite códigos de otras fincas).
   - **Nombre del agricultor**.
   - **Estado Activa/Inactiva**, con confirmación al inactivar.
+- Por ahora ambos perfiles (Administrador y Técnico) pueden actualizar los datos generales.
 - Al cambiar el código:
   - Se actualizan las respuestas locales de la finca para que sigan asociadas al nuevo código.
-  - Se migran los documentos de `formularios-fincas` en Firestore al nuevo ID determinista.
+  - Los formularios de Firestore no necesitan migrarse: referencian la finca por su `fincaId` estable, no por el código.
 - Los cambios se guardan primero en Hive y se intentan subir inmediatamente a la colección `fincas` de Firestore.
 
 ### Formularios Dinámicos
@@ -134,11 +135,11 @@ La app crea automáticamente dos usuarios si aún no existen:
 | Formulario | Descripción |
 |---|---|
 | **Ficha del agricultor** | Datos personales del productor |
-| **Registro manual de cosecha** | Cosechas: producto, cantidad, calidad |
+| **Registro manual de cosecha** | Cosechas: cultivo fijo (Cacao), variedad, cantidad, calidad y condiciones climáticas |
 | **Registro de agroquímicos** | Pesticidas, herbicidas, rodenticidas |
-| **Registro de fertilizantes** | Fertilizantes orgánicos e inorgánicos |
+| **Registro de fertilizantes** | Fertilización: producto, dosis, área, condiciones y firmas |
 
-Cada formulario define campos de tipos: texto, número, fecha, dropdown y switch. Se renderizan dinámicamente según la plantilla JSON.
+Cada formulario define campos de tipos: texto, número entero o decimal, número con unidad, fecha, hora, mes/año, dropdown, switch, firma, campo fijo y sección. Se renderizan dinámicamente según la plantilla JSON.
 
 ### Almacenamiento Local
 - Las respuestas se guardan en Hive, asociadas a la finca y al formulario
@@ -161,9 +162,9 @@ Las pantallas de **Actualizar Finca** y de formularios se refrescan automáticam
 
 **Cómo se identifican los documentos:**
 - Datos generales: colección `fincas`, ID estable `{fincaId}` (UUID). El código de la finca es un campo editable y no forma parte de la identidad.
-- Formularios: ID determinista `{fincaCodigo}_{templateId}` (ej. `BAB-002_registro_cosecha`).
+- Formularios: ID determinista `{fincaId}_{templateId}` (ej. `8f14e45f_registro_cosecha`).
 - La barra `/` se reemplaza por `-` para que sea un ID válido.
-- Si cambia el código de una finca, los documentos de formularios se migran al nuevo ID y se elimina el documento anterior.
+- Como los formularios dependen de `fincaId`, cambiar el código de una finca no requiere migrar sus documentos remotos.
 
 **Esquema del documento en `fincas`:**
 
@@ -185,29 +186,30 @@ Las pantallas de **Actualizar Finca** y de formularios se refrescan automáticam
 
 | Campo | Tipo | Descripción |
 |---|---|---|
-| `fincaId` | string | UUID estable de la finca (opcional en documentos antiguos) |
-| `fincaCodigo` | string | Código de la finca al momento de la sincronización |
-| `nombreAgricultor` | string | Nombre del productor |
-| `canton` | string | Cantón de la finca |
+| `fincaId` | string | UUID estable de la finca |
 | `templateId` | string | ID base de la plantilla (ej. `registro_cosecha`) |
 | `templateTitulo` | string | Título legible del formulario |
 | `respuestas` | map | Respuestas del formulario |
 | `hashRespuestas` | string | SHA-256 canónico de `respuestas` |
 | `actualizadoEn` | timestamp | Marca del servidor (`FieldValue.serverTimestamp()`) |
 | `actualizadoLocalEn` | string (ISO-8601) | Marca del dispositivo, usada para conflictos |
-| `versionEsquema` | number | Versión del esquema (actualmente `1`) |
+| `versionEsquema` | number | Versión del esquema (actualmente `2`) |
 | `origen` | string | `app-productores-RA` |
+
+Los documentos de formularios **no repiten** el código, el nombre del agricultor ni el cantón; esos datos se consultan en `fincas/{fincaId}`.
 
 **Resolución de conflictos:**
 - Si el hash local y el remoto coinciden, no se escribe nada.
 - Si difieren, gana el registro con `timestamp` más reciente (local vs. `actualizadoLocalEn` remoto). Es una política *last-write-wins* por formulario completo.
 - Los **datos generales de la finca** usan la misma política con `actualizadoLocalEn` y `hashDatos`.
 - Si las fechas son iguales, se prioriza el registro local que aún no estaba sincronizado.
-- Si un documento remoto referencia una finca que no existe localmente, se crea una finca placeholder para no perder la respuesta.
-- Si cambia el código de una finca, se migran tanto las claves locales de Hive como los documentos remotos de sus formularios.
+- Si un documento remoto referencia una finca que no existe localmente, se descarga `fincas/{fincaId}`; si tampoco existe en la nube, la respuesta se omite y se registra el error.
+- Al sincronizar, los documentos antiguos de `formularios-fincas` se migran automáticamente al esquema nuevo: se conserva el más reciente, se escribe con `{fincaId}_{templateId}` y se elimina el documento anterior.
+- Si un documento legacy no permite identificar su finca, se conserva y se registra en el log; no se borra para no perder datos.
+- Si cambia el código de una finca, solo se migran las claves locales de Hive; los documentos remotos no cambian porque usan `fincaId`.
 
 **Documento dummy:**
-Firestore elimina una colección cuando se borra su último documento. Para evitarlo se puede mantener un documento como `{ "saludo": "Hola mundo" }`. La app lo **ignora** porque no cumple el esquema (`fincaCodigo`, `templateId` y `respuestas` son obligatorios en `formularios-fincas`; `fincaId` y `codigo` en `fincas`).
+Firestore elimina una colección cuando se borra su último documento. Para evitarlo se puede mantener un documento como `{ "saludo": "Hola mundo" }`. La app lo **ignora** porque no cumple el esquema (`fincaId`, `templateId` y `respuestas` son obligatorios en `formularios-fincas`; `fincaId` y `codigo` en `fincas`).
 
 ---
 

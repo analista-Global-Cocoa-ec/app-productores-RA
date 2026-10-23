@@ -191,7 +191,6 @@ class _FincaDatosGeneralesScreenState extends State<FincaDatosGeneralesScreen> {
     if (!mounted) return;
 
     setState(() => _isSaving = true);
-    final codigoAnterior = _finca.codigo;
 
     try {
       final actualizada = await FincaService.instance.actualizarDatosGenerales(
@@ -218,7 +217,7 @@ class _FincaDatosGeneralesScreenState extends State<FincaDatosGeneralesScreen> {
         backgroundColor: Colors.green,
       );
 
-      unawaited(_sincronizarEnNube(codigoAnterior));
+      unawaited(_sincronizarEnNube());
     } catch (error) {
       if (!mounted) return;
       setState(() => _isSaving = false);
@@ -229,10 +228,9 @@ class _FincaDatosGeneralesScreenState extends State<FincaDatosGeneralesScreen> {
     }
   }
 
-  Future<void> _sincronizarEnNube(String codigoAnterior) async {
+  Future<void> _sincronizarEnNube() async {
     final resultado = await SyncService.instance.sincronizarFinca(
       fincaId: _finca.identificador,
-      codigoAnterior: codigoAnterior,
     );
 
     if (!mounted) return;

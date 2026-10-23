@@ -76,22 +76,18 @@ enum _AccionSync { subir, descargar, sinCambios }
 /// Documento remoto ya validado y convertido a tipos Dart.
 class _DocumentoRemoto {
   final String docId;
-  final String fincaCodigo;
+  final String fincaId;
   final String templateId;
   final String templateTitulo;
-  final String nombreAgricultor;
-  final String canton;
   final Map<String, dynamic> respuestas;
   final String hash;
   final DateTime? fecha;
 
   _DocumentoRemoto({
     required this.docId,
-    required this.fincaCodigo,
+    required this.fincaId,
     required this.templateId,
     required this.templateTitulo,
-    required this.nombreAgricultor,
-    required this.canton,
     required this.respuestas,
     required this.hash,
     required this.fecha,
@@ -102,11 +98,9 @@ class _DocumentoRemoto {
     final hash = data['hashRespuestas'];
     return _DocumentoRemoto(
       docId: docId,
-      fincaCodigo: data['fincaCodigo'] as String,
+      fincaId: data['fincaId'] as String,
       templateId: data['templateId'] as String,
       templateTitulo: data['templateTitulo'] as String? ?? '',
-      nombreAgricultor: data['nombreAgricultor'] as String? ?? '',
-      canton: data['canton'] as String? ?? '',
       respuestas: respuestas,
       hash: hash is String && hash.isNotEmpty
           ? hash
@@ -246,19 +240,23 @@ class SyncService {
     if (!disponible) return const ResultadoSync.noDisponible();
 
     final finca = FincaService.instance.getFincaPorCodigo(fincaCodigo);
+    if (finca == null) {
+      return const ResultadoSync(
+        errores: 1,
+        mensaje: 'No se encontró la finca del formulario.',
+      );
+    }
+
     final hash = SyncUtils.hashRespuestas(respuestas);
 
     try {
       await FirestoreService.instance.guardarDocumento(
-        fincaCodigo: fincaCodigo,
+        fincaId: finca.identificador,
         templateId: templateId,
         templateTitulo: templateTitulo,
         respuestas: respuestas,
         actualizadoLocalEn: timestamp,
         hashRespuestas: hash,
-        fincaId: finca?.identificador,
-        nombreAgricultor: finca?.nombreAgricultor,
-        canton: finca?.canton,
       );
 
       final registro = DatabaseService.instance.getRegistroFormResponse(
@@ -277,14 +275,7 @@ class SyncService {
   }
 
   /// Sube inmediatamente los datos generales de una finca.
-  ///
-  /// [codigoAnterior] permite migrar los formularios remotos cuando el código
-  /// cambió localmente. Si no se indica, se detecta comparando con el
-  /// documento de la finca que ya esté en la nube.
-  Future<ResultadoSync> sincronizarFinca({
-    required String fincaId,
-    String? codigoAnterior,
-  }) async {
+  Future<ResultadoSync> sincronizarFinca({required String fincaId}) async {
     final disponible = await FirestoreService.instance.initialize();
     if (!disponible) return const ResultadoSync.noDisponible();
 
@@ -297,27 +288,6 @@ class SyncService {
     }
 
     try {
-      final remotaData = await FirestoreService.instance.obtenerFinca(fincaId);
-      final remota = remotaData == null
-          ? null
-          : _FincaRemota.desde(fincaId, remotaData);
-
-      // Migrar primero los formularios remotos permite reintentar con
-      // seguridad si la escritura de la finca fallara después.
-      final codigosAnteriores = <String>{
-        if (finca.codigoAnteriorPendiente != null &&
-            finca.codigoAnteriorPendiente!.isNotEmpty)
-          finca.codigoAnteriorPendiente!,
-        if (codigoAnterior != null && codigoAnterior.isNotEmpty) codigoAnterior,
-        if (remota != null && remota.codigo.isNotEmpty) remota.codigo,
-      };
-      for (final anterior in codigosAnteriores) {
-        await _migrarFormulariosSiCambioCodigo(
-          codigoAnterior: anterior,
-          finca: finca,
-        );
-      }
-
       await FirestoreService.instance.guardarFinca(
         fincaId: finca.identificador,
         codigo: finca.codigo,
@@ -328,14 +298,6 @@ class SyncService {
         actualizadoLocalEn: finca.actualizadoLocalEn ?? DateTime.now(),
       );
 
-      await FirestoreService.instance.actualizarMetadatosFormularios(
-        fincaCodigo: finca.codigo,
-        fincaId: finca.identificador,
-        nombreAgricultor: finca.nombreAgricultor,
-        canton: finca.canton,
-      );
-
-      await FincaService.instance.limpiarCodigoAnteriorPendiente(finca);
       await FincaService.instance.marcarSincronizada(finca);
       return const ResultadoSync(subidos: 1);
     } catch (error) {
@@ -371,8 +333,8 @@ class SyncService {
         return resultado;
       }
 
-      // Primero se reconcilian las fincas. Si alguna cambió de código, esta
-      // fase migra también sus documentos de formularios en la nube.
+      // Primero se reconcilian las fincas. Los formularios remotos ya no
+      // guardan datos generales: solo referencian el ID estable de la finca.
       //
       // Si la colección `fincas` aún no está permitida por las reglas de
       // Firestore, no se debe impedir que los formularios sigan
@@ -388,13 +350,31 @@ class SyncService {
         for (final entrada in remotasFincasData.entries)
           entrada.key: _FincaRemota.desde(entrada.key, entrada.value),
       };
+
+      // Se guardan también los códigos anteriores como alias para poder
+      // resolver documentos remotos legacy que solo tengan `fincaCodigo`.
+      final fincaIdPorCodigo = <String, String>{};
+      void registrarCodigosDeFincas() {
+        for (final finca in FincaService.instance.getTodasLasFincas()) {
+          fincaIdPorCodigo[finca.codigo] = finca.identificador;
+          final anterior = finca.codigoAnteriorPendiente;
+          if (anterior != null && anterior.isNotEmpty) {
+            fincaIdPorCodigo[anterior] = finca.identificador;
+          }
+        }
+      }
+
+      registrarCodigosDeFincas();
       final resultadoFincas = await _sincronizarFincas(remotasFincas);
       subidos += resultadoFincas.subidos;
       descargados += resultadoFincas.descargados;
       sinCambios += resultadoFincas.sinCambios;
       errores += resultadoFincas.errores;
 
-      final remotosData = await FirestoreService.instance.obtenerTodos();
+      registrarCodigosDeFincas();
+      final remotosData = await FirestoreService.instance.obtenerFormulariosV2(
+        fincaIdPorCodigo: fincaIdPorCodigo,
+      );
       final remotos = <String, _DocumentoRemoto>{
         for (final entrada in remotosData.entries)
           entrada.key: _DocumentoRemoto.desde(entrada.key, entrada.value),
@@ -402,9 +382,9 @@ class SyncService {
       final locales = await DatabaseService.instance.getAllResponses();
 
       final remotosUsados = <String>{};
-      final remotosPorClaveCompuesta = <String, String>{
-        for (final remoto in remotos.values)
-          '${remoto.templateId}:${remoto.fincaCodigo.hashCode}': remoto.docId,
+      final fincasPorCodigo = {
+        for (final finca in FincaService.instance.getTodasLasFincas())
+          finca.codigo: finca,
       };
 
       for (final local in locales) {
@@ -412,22 +392,19 @@ class SyncService {
             local.templateBaseId ?? SyncUtils.templateBaseId(local.templateId);
         final fincaCodigo =
             local.fincaCodigo ?? _fincaPorHash(local.templateId);
+        final finca = fincaCodigo == null ? null : fincasPorCodigo[fincaCodigo];
 
-        final docIdDeterminista = fincaCodigo != null
-            ? FirestoreService.docIdPara(fincaCodigo, templateBase)
-            : null;
-        // Preferir el ID determinista; si el documento remoto fue creado con
-        // otro ID, se localiza por la clave compuesta para no duplicarlo.
-        final docIdRemoto =
-            docIdDeterminista != null && remotos.containsKey(docIdDeterminista)
-            ? docIdDeterminista
-            : remotosPorClaveCompuesta[local.templateId];
-
-        final remoto = docIdRemoto != null ? remotos[docIdRemoto] : null;
+        if (finca == null) {
+          debugPrint(
+            'No se pudo determinar la finca del registro ${local.templateId}',
+          );
+          errores++;
+          continue;
+        }
 
         // Completar metadatos faltantes en registros heredados.
-        if (local.fincaCodigo == null && fincaCodigo != null) {
-          local.fincaCodigo = fincaCodigo;
+        if (local.fincaCodigo == null) {
+          local.fincaCodigo = finca.codigo;
           local.templateBaseId = templateBase;
           local.hashRespuestas ??= SyncUtils.hashRespuestas(local.respuestas);
           await local.save();
@@ -438,17 +415,15 @@ class SyncService {
           await local.save();
         }
 
-        if (remoto == null) {
-          if (fincaCodigo == null) {
-            debugPrint(
-              'No se pudo determinar la finca del registro ${local.templateId}',
-            );
-            errores++;
-            continue;
-          }
+        final docIdRemoto = FirestoreService.docIdPara(
+          finca.identificador,
+          templateBase,
+        );
+        final remoto = remotos[docIdRemoto];
 
+        if (remoto == null) {
           try {
-            await _subirLocal(local, fincaCodigo, templateBase);
+            await _subirLocal(local, finca, templateBase);
             subidos++;
           } catch (error) {
             debugPrint('Error subiendo registro local: $error');
@@ -463,7 +438,7 @@ class SyncService {
             local,
             remoto,
             templateBase,
-            fincaCodigo,
+            finca,
           );
           switch (accion) {
             case _AccionSync.subir:
@@ -613,20 +588,6 @@ class SyncService {
     Finca local,
     _FincaRemota remota,
   ) async {
-    // Primero se intenta completar cualquier migración pendiente de código.
-    // Así, aunque el contenido de la finca ya coincida, los formularios
-    // remotos no quedan huérfanos si una sincronización anterior falló.
-    final pendiente = local.codigoAnteriorPendiente;
-    if (pendiente != null &&
-        pendiente.isNotEmpty &&
-        pendiente != local.codigo) {
-      await _migrarFormulariosSiCambioCodigo(
-        codigoAnterior: pendiente,
-        finca: local,
-      );
-      await FincaService.instance.limpiarCodigoAnteriorPendiente(local);
-    }
-
     final hashLocal = SyncUtils.hashFinca(
       codigo: local.codigo,
       canton: local.canton,
@@ -637,6 +598,7 @@ class SyncService {
 
     if (hashLocal == remota.hash) {
       await FincaService.instance.marcarSincronizada(local);
+      await FincaService.instance.limpiarCodigoAnteriorPendiente(local);
       return _AccionSync.sinCambios;
     }
 
@@ -650,34 +612,10 @@ class SyncService {
                       local.sincronizado != true));
 
     if (localGana) {
-      final codigoAnteriorRemoto = remota.codigo;
-      final nombreRemoto = remota.nombreAgricultor;
-      final cantonRemoto = remota.canton;
-
-      if (codigoAnteriorRemoto != local.codigo) {
-        await _migrarFormulariosSiCambioCodigo(
-          codigoAnterior: codigoAnteriorRemoto,
-          finca: local,
-        );
-      }
       await _subirFinca(local);
-      if (codigoAnteriorRemoto == local.codigo &&
-          (nombreRemoto != (local.nombreAgricultor?.trim() ?? '') ||
-              cantonRemoto != local.canton)) {
-        await FirestoreService.instance.actualizarMetadatosFormularios(
-          fincaCodigo: local.codigo,
-          fincaId: local.identificador,
-          nombreAgricultor: local.nombreAgricultor,
-          canton: local.canton,
-        );
-      }
       await FincaService.instance.limpiarCodigoAnteriorPendiente(local);
       return _AccionSync.subir;
     }
-
-    final codigoAnteriorLocal = local.codigo;
-    final nombreRemoto = remota.nombreAgricultor;
-    final cantonRemoto = remota.canton;
 
     await FincaService.instance.aplicarDatosDesdeNube(
       fincaId: local.identificador,
@@ -688,21 +626,6 @@ class SyncService {
       estado: remota.estado,
       actualizadoLocalEn: remota.fecha ?? DateTime.now(),
     );
-
-    if (codigoAnteriorLocal != remota.codigo) {
-      await _migrarFormulariosSiCambioCodigo(
-        codigoAnterior: codigoAnteriorLocal,
-        finca: local,
-      );
-    } else if (nombreRemoto != (local.nombreAgricultor?.trim() ?? '') ||
-        cantonRemoto != local.canton) {
-      await FirestoreService.instance.actualizarMetadatosFormularios(
-        fincaCodigo: local.codigo,
-        fincaId: local.identificador,
-        nombreAgricultor: local.nombreAgricultor,
-        canton: local.canton,
-      );
-    }
     await FincaService.instance.limpiarCodigoAnteriorPendiente(local);
     return _AccionSync.descargar;
   }
@@ -737,26 +660,11 @@ class SyncService {
     }
   }
 
-  Future<void> _migrarFormulariosSiCambioCodigo({
-    required String codigoAnterior,
-    required Finca finca,
-  }) async {
-    if (codigoAnterior.isEmpty || codigoAnterior == finca.codigo) return;
-
-    await FirestoreService.instance.migrarDocumentosFormulario(
-      codigoAnterior: codigoAnterior,
-      codigoNuevo: finca.codigo,
-      fincaId: finca.identificador,
-      nombreAgricultor: finca.nombreAgricultor,
-      canton: finca.canton,
-    );
-  }
-
   Future<_AccionSync> _resolverConflicto(
     FormResponse local,
     _DocumentoRemoto remoto,
     String templateBase,
-    String? fincaCodigo,
+    Finca finca,
   ) async {
     final hashLocal =
         local.hashRespuestas ?? SyncUtils.hashRespuestas(local.respuestas);
@@ -780,7 +688,7 @@ class SyncService {
                   local.sincronizado != true);
 
     if (localGana) {
-      await _subirLocal(local, fincaCodigo ?? remoto.fincaCodigo, templateBase);
+      await _subirLocal(local, finca, templateBase);
       return _AccionSync.subir;
     }
 
@@ -790,36 +698,35 @@ class SyncService {
 
   Future<void> _subirLocal(
     FormResponse local,
-    String fincaCodigo,
+    Finca finca,
     String templateBase,
   ) async {
-    final finca = FincaService.instance.getFincaPorCodigo(fincaCodigo);
     final titulo = await _tituloTemplate(templateBase);
     final hash =
         local.hashRespuestas ?? SyncUtils.hashRespuestas(local.respuestas);
 
     await FirestoreService.instance.guardarDocumento(
-      fincaCodigo: fincaCodigo,
+      fincaId: finca.identificador,
       templateId: templateBase,
       templateTitulo: titulo,
       respuestas: local.respuestas,
       actualizadoLocalEn: local.timestamp,
       hashRespuestas: hash,
-      fincaId: finca?.identificador,
-      nombreAgricultor: finca?.nombreAgricultor,
-      canton: finca?.canton,
     );
 
-    local.fincaCodigo = fincaCodigo;
+    local.fincaCodigo = finca.codigo;
     local.templateBaseId = templateBase;
     await DatabaseService.instance.marcarSincronizado(local, hash: hash);
   }
 
   Future<void> _descargarRemoto(_DocumentoRemoto remoto) async {
-    await _asegurarFincaLocal(remoto);
+    final finca = await _asegurarFincaLocal(remoto.fincaId);
+    if (finca == null) {
+      throw StateError('No se encontró la finca ${remoto.fincaId}.');
+    }
 
     await DatabaseService.instance.guardarRespuestaDesdeNube(
-      fincaCodigo: remoto.fincaCodigo,
+      fincaCodigo: finca.codigo,
       templateId: remoto.templateId,
       respuestas: remoto.respuestas,
       timestamp: remoto.fecha ?? DateTime.now(),
@@ -828,27 +735,21 @@ class SyncService {
     );
   }
 
-  Future<void> _asegurarFincaLocal(_DocumentoRemoto remoto) async {
-    if (FincaService.instance.getFincaPorCodigo(remoto.fincaCodigo) != null) {
-      return;
+  Future<Finca?> _asegurarFincaLocal(String fincaId) async {
+    final local = FincaService.instance.getFincaPorId(fincaId);
+    if (local != null) return local;
+
+    try {
+      final data = await FirestoreService.instance.obtenerFinca(fincaId);
+      if (data == null) return null;
+
+      final remota = _FincaRemota.desde(fincaId, data);
+      await _descargarFincaRemota(remota);
+      return FincaService.instance.getFincaPorId(fincaId);
+    } catch (error) {
+      debugPrint('No se pudo recuperar la finca $fincaId: $error');
+      return null;
     }
-
-    final partes = remoto.fincaCodigo.split('-');
-    final prefijo = partes.length > 1 ? partes.first : 'REM';
-    final canton = remoto.canton.isNotEmpty ? remoto.canton : 'Sin cantón';
-
-    await FincaService.instance.registrarFinca(
-      codigo: remoto.fincaCodigo,
-      canton: canton,
-      prefijo: prefijo,
-      nombreAgricultor: remoto.nombreAgricultor.isNotEmpty
-          ? remoto.nombreAgricultor
-          : null,
-    );
-
-    debugPrint(
-      'Finca ${remoto.fincaCodigo} creada desde Firestore (no existía localmente).',
-    );
   }
 
   Future<String> _tituloTemplate(String templateBase) async {

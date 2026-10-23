@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/finca.dart';
 import '../services/database_service.dart';
 import '../services/finca_service.dart';
+import '../services/form_completion.dart';
 import '../services/sync_service.dart';
 import '../services/template_service.dart';
 import 'finca_datos_generales_screen.dart';
@@ -141,41 +142,10 @@ class _FincaFormulariosScreenState extends State<FincaFormulariosScreen> {
   /// Calcula el estado de completitud de un formulario
   /// Retorna: 'empty', 'partial', o 'complete'
   String _getEstadoFormulario(String templateId) {
-    final respuestas = _respuestasPorFormulario[templateId];
-    final template = _templates[templateId];
-
-    if (respuestas == null || template == null) return 'empty';
-
-    final campos =
-        (template['campos'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-    if (campos.isEmpty) return 'empty';
-
-    int camposLlenos = 0;
-    int totalCampos = 0;
-    for (final campo in campos) {
-      // Un campo puede guardar su valor en varias claves (número + unidad,
-      // mes + año).
-      final claves = <String>[campo['key'] as String];
-      for (final extra in ['unitKey', 'anioKey']) {
-        final claveExtra = campo[extra];
-        if (claveExtra is String && claveExtra.isNotEmpty) {
-          claves.add(claveExtra);
-        }
-      }
-
-      for (final clave in claves) {
-        totalCampos++;
-        final valor = respuestas[clave];
-        if (valor != null && valor.toString().isNotEmpty) {
-          camposLlenos++;
-        }
-      }
-    }
-
-    if (totalCampos == 0) return 'empty';
-    if (camposLlenos == 0) return 'empty';
-    if (camposLlenos == totalCampos) return 'complete';
-    return 'partial';
+    return FormCompletion.estado(
+      template: _templates[templateId],
+      respuestas: _respuestasPorFormulario[templateId],
+    );
   }
 
   Color _getColorForEstado(String estado) {

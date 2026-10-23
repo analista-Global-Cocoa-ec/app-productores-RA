@@ -7,9 +7,9 @@ class SyncUtils {
   SyncUtils._();
 
   /// Genera el ID determinista del documento en la colección
-  /// `formularios-fincas`.
-  static String docIdPara(String fincaCodigo, String templateId) {
-    final limpio = '${fincaCodigo}_$templateId'.replaceAll('/', '-');
+  /// `formularios-fincas` usando el ID estable de la finca.
+  static String docIdPara(String fincaId, String templateId) {
+    final limpio = '${fincaId}_$templateId'.replaceAll('/', '-');
     return limpio;
   }
 

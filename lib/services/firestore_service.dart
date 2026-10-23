@@ -16,7 +16,8 @@ class FirestoreService {
 
   static const String coleccionFincas = 'fincas';
   static const String coleccionFormularios = 'formularios-fincas';
-  static const int versionEsquema = 1;
+  static const int versionEsquemaFincas = 1;
+  static const int versionEsquemaFormularios = 2;
 
   bool _disponible = false;
   bool _inicializacionIntentada = false;
@@ -71,8 +72,8 @@ class FirestoreService {
       FirebaseFirestore.instance.collection(coleccionFincas);
 
   /// ID determinista del documento para una finca y formulario.
-  static String docIdPara(String fincaCodigo, String templateId) =>
-      SyncUtils.docIdPara(fincaCodigo, templateId);
+  static String docIdPara(String fincaId, String templateId) =>
+      SyncUtils.docIdPara(fincaId, templateId);
 
   /// Descarga los datos generales de todas las fincas.
   Future<Map<String, Map<String, dynamic>>> obtenerFincas() async {
@@ -134,183 +135,106 @@ class FirestoreService {
       ),
       'actualizadoEn': FieldValue.serverTimestamp(),
       'actualizadoLocalEn': actualizadoLocalEn.toUtc().toIso8601String(),
-      'versionEsquema': versionEsquema,
+      'versionEsquema': versionEsquemaFincas,
       'origen': 'app-productores-RA',
     }, SetOptions(merge: true));
   }
 
-  /// Actualiza el código de la finca en todos sus formularios remotos.
+  /// Lee los formularios remotos y migra los documentos antiguos al esquema
+  /// actual.
   ///
-  /// Los documentos de `formularios-fincas` usan un ID determinista que
-  /// incluye el código de la finca. Al cambiarlo hay que crear el documento
-  /// con el nuevo ID y borrar el anterior para no dejar duplicados.
-  Future<void> migrarDocumentosFormulario({
-    required String codigoAnterior,
-    required String codigoNuevo,
-    String? fincaId,
-    String? nombreAgricultor,
-    String? canton,
+  /// El esquema nuevo usa `fincaId` como única referencia a la finca y el ID
+  /// determinista `{fincaId}_{templateId}`. Los documentos antiguos se
+  /// reemplazan por el documento nuevo y se eliminan para no dejar duplicados.
+  Future<Map<String, Map<String, dynamic>>> obtenerFormulariosV2({
+    required Map<String, String> fincaIdPorCodigo,
   }) async {
-    if (!_disponible) {
-      throw StateError('Firestore no está disponible en esta plataforma.');
-    }
-    if (codigoAnterior == codigoNuevo) {
-      await actualizarMetadatosFormularios(
-        fincaCodigo: codigoNuevo,
-        fincaId: fincaId,
-        nombreAgricultor: nombreAgricultor,
-        canton: canton,
-      );
-      return;
-    }
-
-    final snapshot = await _coleccion
-        .where('fincaCodigo', isEqualTo: codigoAnterior)
-        .get();
-
-    for (final doc in snapshot.docs) {
-      final data = Map<String, dynamic>.from(doc.data());
-
-      // Un código puede reutilizarse cuando una finca se inactiva. Si el
-      // documento ya tiene `fincaId`, solo se migra si pertenece a esta finca.
-      final docFincaId = data['fincaId'];
-      if (fincaId != null &&
-          fincaId.isNotEmpty &&
-          docFincaId is String &&
-          docFincaId.isNotEmpty &&
-          docFincaId != fincaId) {
-        continue;
-      }
-
-      final templateId = data['templateId'];
-      if (templateId is! String || templateId.isEmpty) continue;
-
-      final nuevoDocId = docIdPara(codigoNuevo, templateId);
-      final nuevoRef = _coleccion.doc(nuevoDocId);
-
-      if (nuevoDocId == doc.id) {
-        final metadatos = <String, dynamic>{
-          'fincaCodigo': codigoNuevo,
-          'actualizadoEn': FieldValue.serverTimestamp(),
-        };
-        if (fincaId != null && fincaId.isNotEmpty) {
-          metadatos['fincaId'] = fincaId;
-        }
-        if (nombreAgricultor != null) {
-          metadatos['nombreAgricultor'] = nombreAgricultor.trim();
-        }
-        if (canton != null) metadatos['canton'] = canton;
-
-        await nuevoRef.set(metadatos, SetOptions(merge: true));
-        continue;
-      }
-
-      final existente = await nuevoRef.get();
-      if (existente.exists) {
-        final datosExistentes = existente.data();
-        final fechaExistente = datosExistentes == null
-            ? null
-            : fechaDesdeDocumento(datosExistentes);
-        final fechaOrigen = fechaDesdeDocumento(data);
-
-        // Si el documento destino ya tiene datos más recientes, se conserva
-        // ese contenido y solo se actualizan los metadatos de la finca.
-        if (fechaExistente != null &&
-            (fechaOrigen == null || fechaExistente.isAfter(fechaOrigen))) {
-          final metadatos = <String, dynamic>{
-            'fincaCodigo': codigoNuevo,
-            'actualizadoEn': FieldValue.serverTimestamp(),
-          };
-          if (fincaId != null && fincaId.isNotEmpty) {
-            metadatos['fincaId'] = fincaId;
-          }
-          if (nombreAgricultor != null) {
-            metadatos['nombreAgricultor'] = nombreAgricultor.trim();
-          }
-          if (canton != null) metadatos['canton'] = canton;
-
-          await nuevoRef.set(metadatos, SetOptions(merge: true));
-          await doc.reference.delete();
-          continue;
-        }
-      }
-
-      data['fincaCodigo'] = codigoNuevo;
-      if (fincaId != null && fincaId.isNotEmpty) {
-        data['fincaId'] = fincaId;
-      }
-      if (nombreAgricultor != null) {
-        data['nombreAgricultor'] = nombreAgricultor.trim();
-      }
-      if (canton != null) data['canton'] = canton;
-      data['actualizadoEn'] = FieldValue.serverTimestamp();
-
-      await nuevoRef.set(data);
-      await doc.reference.delete();
-    }
-  }
-
-  /// Actualiza nombre del agricultor y cantón en los formularios remotos.
-  Future<void> actualizarMetadatosFormularios({
-    required String fincaCodigo,
-    String? fincaId,
-    String? nombreAgricultor,
-    String? canton,
-  }) async {
-    if (!_disponible) return;
-    if (nombreAgricultor == null && canton == null && fincaId == null) return;
-
-    final snapshot = await _coleccion
-        .where('fincaCodigo', isEqualTo: fincaCodigo)
-        .get();
-    if (snapshot.docs.isEmpty) return;
-
-    final batch = FirebaseFirestore.instance.batch();
-    var tieneCambios = false;
-    for (final doc in snapshot.docs) {
-      final data = doc.data();
-      final docFincaId = data['fincaId'];
-      if (fincaId != null &&
-          fincaId.isNotEmpty &&
-          docFincaId is String &&
-          docFincaId.isNotEmpty &&
-          docFincaId != fincaId) {
-        continue;
-      }
-
-      final metadatos = <String, dynamic>{};
-      if (fincaId != null && fincaId.isNotEmpty) {
-        metadatos['fincaId'] = fincaId;
-      }
-      if (nombreAgricultor != null) {
-        metadatos['nombreAgricultor'] = nombreAgricultor.trim();
-      }
-      if (canton != null) metadatos['canton'] = canton;
-      if (metadatos.isNotEmpty) {
-        batch.update(doc.reference, metadatos);
-        tieneCambios = true;
-      }
-    }
-    if (tieneCambios) await batch.commit();
-  }
-
-  /// Descarga todos los documentos válidos de la colección.
-  ///
-  /// Los documentos que no tienen el esquema esperado (por ejemplo el
-  /// documento dummy usado para conservar la colección) se ignoran.
-  Future<Map<String, Map<String, dynamic>>> obtenerTodos() async {
     if (!_disponible) return {};
 
     final snapshot = await _coleccion.get();
-    final documentos = <String, Map<String, dynamic>>{};
+    final pendientes = <String, List<_DocumentoFormularioPendiente>>{};
 
     for (final doc in snapshot.docs) {
       final data = doc.data();
-      if (!esDocumentoValido(data)) {
-        debugPrint('Documento ignorado (esquema no reconocido): ${doc.id}');
+      final templateId = data['templateId'];
+      final respuestas = data['respuestas'];
+      if (templateId is! String || templateId.isEmpty || respuestas is! Map) {
+        debugPrint('Formulario ignorado (esquema no reconocido): ${doc.id}');
         continue;
       }
-      documentos[doc.id] = data;
+
+      final fincaId = _resolverFincaId(data, fincaIdPorCodigo);
+      if (fincaId == null) {
+        debugPrint('Formulario ignorado (finca no identificable): ${doc.id}');
+        continue;
+      }
+
+      final nuevoId = docIdPara(fincaId, templateId);
+      final normalizado = _normalizarDocumentoFormulario(
+        data,
+        fincaId: fincaId,
+        templateId: templateId,
+      );
+
+      pendientes
+          .putIfAbsent(nuevoId, () => [])
+          .add(
+            _DocumentoFormularioPendiente(
+              docId: doc.id,
+              normalizado: normalizado,
+              fecha: fechaDesdeDocumento(data),
+              yaV2: _esDocumentoFormularioV2(data, fincaId, templateId),
+            ),
+          );
+    }
+
+    final documentos = <String, Map<String, dynamic>>{};
+    for (final entrada in pendientes.entries) {
+      final nuevoId = entrada.key;
+      final candidatos = entrada.value;
+
+      // El último de la lista es el ganador: fecha más reciente y, en empate,
+      // el documento que ya cumple el esquema nuevo.
+      candidatos.sort((a, b) {
+        final fechaA = a.fecha;
+        final fechaB = b.fecha;
+        if (fechaA != null && fechaB != null) {
+          final comparacion = fechaA.compareTo(fechaB);
+          if (comparacion != 0) return comparacion;
+        } else if (fechaA != null) {
+          return 1;
+        } else if (fechaB != null) {
+          return -1;
+        }
+
+        if (a.yaV2 != b.yaV2) return a.yaV2 ? 1 : -1;
+
+        final aEsDeterminista = a.docId == nuevoId;
+        final bEsDeterminista = b.docId == nuevoId;
+        if (aEsDeterminista != bEsDeterminista) {
+          return aEsDeterminista ? 1 : -1;
+        }
+        return 0;
+      });
+
+      final ganador = candidatos.last;
+      final datosFinales = ganador.normalizado;
+
+      try {
+        if (!ganador.yaV2 || ganador.docId != nuevoId) {
+          await _coleccion.doc(nuevoId).set(datosFinales);
+        }
+
+        for (final candidato in candidatos) {
+          if (candidato.docId != nuevoId) {
+            await _coleccion.doc(candidato.docId).delete();
+          }
+        }
+      } catch (error) {
+        debugPrint('No se pudo migrar el formulario $nuevoId: $error');
+      }
+
+      documentos[nuevoId] = datosFinales;
     }
 
     return documentos;
@@ -318,46 +242,40 @@ class FirestoreService {
 
   /// Sube (o actualiza) la respuesta de un formulario.
   Future<void> guardarDocumento({
-    required String fincaCodigo,
+    required String fincaId,
     required String templateId,
     required String templateTitulo,
     required Map<String, dynamic> respuestas,
     required DateTime actualizadoLocalEn,
     required String hashRespuestas,
-    String? fincaId,
-    String? nombreAgricultor,
-    String? canton,
   }) async {
     if (!_disponible) {
       throw StateError('Firestore no está disponible en esta plataforma.');
     }
 
-    final docId = docIdPara(fincaCodigo, templateId);
+    final docId = docIdPara(fincaId, templateId);
     final referencia = _coleccion.doc(docId);
 
     await referencia.set({
-      'fincaCodigo': fincaCodigo,
-      if (fincaId != null && fincaId.isNotEmpty) 'fincaId': fincaId,
-      'nombreAgricultor': nombreAgricultor ?? '',
-      'canton': canton ?? '',
+      'fincaId': fincaId,
       'templateId': templateId,
       'templateTitulo': templateTitulo,
       'respuestas': SyncUtils.sanitizarRespuestas(respuestas),
       'hashRespuestas': hashRespuestas,
       'actualizadoEn': FieldValue.serverTimestamp(),
       'actualizadoLocalEn': actualizadoLocalEn.toUtc().toIso8601String(),
-      'versionEsquema': versionEsquema,
+      'versionEsquema': versionEsquemaFormularios,
       'origen': 'app-productores-RA',
     }, SetOptions(merge: true));
   }
 
-  /// Valida que un documento pertenezca al esquema de formularios.
+  /// Valida que un documento pertenezca al esquema de formularios actual.
   static bool esDocumentoValido(Map<String, dynamic> data) {
-    final fincaCodigo = data['fincaCodigo'];
+    final fincaId = data['fincaId'];
     final templateId = data['templateId'];
     final respuestas = data['respuestas'];
-    return fincaCodigo is String &&
-        fincaCodigo.isNotEmpty &&
+    return fincaId is String &&
+        fincaId.isNotEmpty &&
         templateId is String &&
         templateId.isNotEmpty &&
         respuestas is Map;
@@ -391,4 +309,82 @@ class FirestoreService {
   /// Fecha de última edición de los datos generales de una finca.
   static DateTime? fechaDesdeFinca(Map<String, dynamic> data) =>
       fechaDesdeDocumento(data);
+
+  static String? _resolverFincaId(
+    Map<String, dynamic> data,
+    Map<String, String> fincaIdPorCodigo,
+  ) {
+    final fincaId = data['fincaId'];
+    if (fincaId is String && fincaId.isNotEmpty) return fincaId;
+
+    final fincaCodigo = data['fincaCodigo'];
+    if (fincaCodigo is String && fincaCodigo.isNotEmpty) {
+      return fincaIdPorCodigo[fincaCodigo];
+    }
+
+    return null;
+  }
+
+  static Map<String, dynamic> _normalizarDocumentoFormulario(
+    Map<String, dynamic> data, {
+    required String fincaId,
+    required String templateId,
+  }) {
+    final respuestas = Map<String, dynamic>.from(data['respuestas'] as Map);
+    final hash = data['hashRespuestas'];
+    final fecha = fechaDesdeDocumento(data);
+    final actualizadoLocalEn = data['actualizadoLocalEn'];
+    final actualizadoEn = data['actualizadoEn'];
+    final templateTitulo = data['templateTitulo'];
+    final origen = data['origen'];
+
+    return {
+      'fincaId': fincaId,
+      'templateId': templateId,
+      'templateTitulo': templateTitulo is String ? templateTitulo : '',
+      'respuestas': SyncUtils.sanitizarRespuestas(respuestas),
+      'hashRespuestas': hash is String && hash.isNotEmpty
+          ? hash
+          : SyncUtils.hashRespuestas(respuestas),
+      'actualizadoEn': actualizadoEn is Timestamp
+          ? actualizadoEn
+          : FieldValue.serverTimestamp(),
+      'actualizadoLocalEn':
+          actualizadoLocalEn is String && actualizadoLocalEn.isNotEmpty
+          ? actualizadoLocalEn
+          : (fecha ?? DateTime.now()).toUtc().toIso8601String(),
+      'versionEsquema': versionEsquemaFormularios,
+      'origen': origen is String && origen.isNotEmpty
+          ? origen
+          : 'app-productores-RA',
+    };
+  }
+
+  static bool _esDocumentoFormularioV2(
+    Map<String, dynamic> data,
+    String fincaId,
+    String templateId,
+  ) {
+    return data['versionEsquema'] == versionEsquemaFormularios &&
+        data['fincaId'] == fincaId &&
+        data['templateId'] == templateId &&
+        data['respuestas'] is Map &&
+        !data.containsKey('fincaCodigo') &&
+        !data.containsKey('nombreAgricultor') &&
+        !data.containsKey('canton');
+  }
+}
+
+class _DocumentoFormularioPendiente {
+  final String docId;
+  final Map<String, dynamic> normalizado;
+  final DateTime? fecha;
+  final bool yaV2;
+
+  const _DocumentoFormularioPendiente({
+    required this.docId,
+    required this.normalizado,
+    required this.fecha,
+    required this.yaV2,
+  });
 }

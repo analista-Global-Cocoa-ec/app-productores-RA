@@ -6,12 +6,12 @@ void main() {
   group('SyncUtils', () {
     test('genera IDs de documento válidos y deterministas', () {
       expect(
-        SyncUtils.docIdPara('BAB-002', 'registro_cosecha'),
-        'BAB-002_registro_cosecha',
+        SyncUtils.docIdPara('finca-uuid-002', 'registro_cosecha'),
+        'finca-uuid-002_registro_cosecha',
       );
       expect(
-        SyncUtils.docIdPara('BAB/002', 'registro_cosecha'),
-        'BAB-002_registro_cosecha',
+        SyncUtils.docIdPara('finca/002', 'registro_cosecha'),
+        'finca-002_registro_cosecha',
       );
     });
 

@@ -14,7 +14,7 @@ void main() {
     test('acepta un documento con el esquema de formularios', () {
       expect(
         FirestoreService.esDocumentoValido({
-          'fincaCodigo': 'BAB-002',
+          'fincaId': 'finca-uuid-002',
           'templateId': 'registro_cosecha',
           'respuestas': {'peso': 10},
         }),
@@ -22,17 +22,28 @@ void main() {
       );
     });
 
-    test('rechaza documentos incompletos', () {
+    test('rechaza documentos legacy que solo tienen fincaCodigo', () {
       expect(
         FirestoreService.esDocumentoValido({
           'fincaCodigo': 'BAB-002',
+          'templateId': 'registro_cosecha',
+          'respuestas': {'peso': 10},
+        }),
+        isFalse,
+      );
+    });
+
+    test('rechaza documentos incompletos', () {
+      expect(
+        FirestoreService.esDocumentoValido({
+          'fincaId': 'finca-uuid-002',
           'templateId': 'registro_cosecha',
         }),
         isFalse,
       );
       expect(
         FirestoreService.esDocumentoValido({
-          'fincaCodigo': '',
+          'fincaId': '',
           'templateId': 'registro_cosecha',
           'respuestas': <String, dynamic>{},
         }),

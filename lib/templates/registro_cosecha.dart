@@ -5,8 +5,10 @@
 /// - text: respuesta corta
 /// - number: número (con `positive: true` exige > 0 y `suffix` para la unidad)
 /// - number_unit: número + lista desplegable de unidades (`unitKey`)
+/// - dropdown: lista de opciones, con valor inicial opcional (`default`)
 /// - date: fecha
-/// - fixed: valor fijo tomado de la finca (`source`)
+/// - fixed: valor fijo tomado de la finca (`source`) o definido en la plantilla (`value`)
+/// - section: agrupa campos relacionados en una sección (`campos`)
 /// - signature: firma dibujada
 /// - month_year: lista de meses + lista de años (`anioKey`)
 final Map<String, dynamic> registroCosechaTemplate = {
@@ -31,18 +33,23 @@ final Map<String, dynamic> registroCosechaTemplate = {
     {
       'key': 'nombre_cultivo',
       'label': 'Nombre del cultivo',
-      'type': 'text',
-      'required': true,
-      'maxLength': 100,
-      'hint': 'Ej: Cacao',
+      'type': 'fixed',
+      'value': 'Cacao',
+      'required': false,
     },
     {
       'key': 'variedad_cultivo',
       'label': 'Variedad (si aplica)',
-      'type': 'text',
+      'type': 'dropdown',
       'required': false,
-      'maxLength': 100,
-      'hint': 'Ej: Criollo, Trinitario',
+      'default': 'CCN51',
+      'options': [
+        'CCN51',
+        'Cacao Arriba',
+        'Cacao Nacional',
+        'Cacao Trinitario',
+        'Cacao Forastero',
+      ],
     },
     {
       'key': 'fecha_cosecha',
@@ -73,10 +80,43 @@ final Map<String, dynamic> registroCosechaTemplate = {
     {
       'key': 'condiciones_climaticas',
       'label': 'Condiciones climáticas durante la cosecha',
-      'type': 'text',
-      'required': true,
-      'maxLength': 150,
-      'hint': 'Ej: Soleado, lluvia ligera',
+      'type': 'section',
+      'descripcion': 'Indique cómo estuvo el clima durante la cosecha.',
+      'campos': [
+        {
+          'key': 'viento_cosecha',
+          'label': 'Viento',
+          'type': 'dropdown',
+          'required': true,
+          'options': [
+            'Sin viento',
+            'Viento leve',
+            'Viento moderado',
+            'Viento fuerte',
+          ],
+        },
+        {
+          'key': 'lluvia_cosecha',
+          'label': 'Lluvia',
+          'type': 'dropdown',
+          'required': true,
+          'options': [
+            'Sin lluvia',
+            'Lluvia ligera',
+            'Lluvia moderada',
+            'Lluvia intensa',
+          ],
+        },
+        {
+          'key': 'temperatura_cosecha_c',
+          'label': 'Temperatura',
+          'type': 'number',
+          'required': true,
+          'integer': true,
+          'suffix': '°C',
+          'hint': 'Número entero, ej: 28',
+        },
+      ],
     },
     {
       'key': 'responsable_cosecha',
@@ -154,10 +194,7 @@ final Map<String, dynamic> registroCosechaTemplate = {
         'Noviembre',
         'Diciembre',
       ],
-      'anios': List.generate(
-        12,
-        (indice) => '${DateTime.now().year - indice}',
-      ),
+      'anios': List.generate(12, (indice) => '${DateTime.now().year - indice}'),
     },
   ],
 };
